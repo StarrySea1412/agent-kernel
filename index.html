@@ -1,0 +1,1761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="color-scheme" content="light"/>
+<meta name="theme-color" content="#f5f2ea"/>
+<link rel="preload" href="assets/fonts/wenkai-regular.woff2" as="font" type="font/woff2" crossorigin/>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23f5f2ea'/%3E%3Crect x='4' y='4' width='16' height='16' rx='3' fill='none' stroke='%232a6570' stroke-width='1.8'/%3E%3Ccircle cx='8' cy='8' r='1.7' fill='%23a2612a'/%3E%3Ccircle cx='16' cy='8' r='1.7' fill='%231c1f23'/%3E%3Ccircle cx='8' cy='16' r='1.7' fill='%231c1f23'/%3E%3Ccircle cx='16' cy='16' r='1.7' fill='%23a2612a'/%3E%3C/svg%3E"/>
+<meta name="description" content="Agent 内核：把概率关进确定性的笼子。从 ReAct 循环的死循环，到 0.95^10 的可靠性断崖、上下文腐化、工具语义与持久化运行时——一份可以照着写代码的 Agent 运行时解剖。"/>
+<meta name="author" content="StarrySea1412"/>
+<meta property="og:title" content="Agent 内核 · 造物手记"/>
+<meta property="og:description" content="能力靠模型，可靠靠内核。六个子系统，三枚可玩小样。"/>
+<meta property="og:type" content="article"/>
+<title>Agent 内核 · 把概率关进确定性的笼子</title>
+<style>
+@font-face{font-family:"LXGW WenKai";src:url("assets/fonts/wenkai-regular.woff2") format("woff2");font-weight:300 599;font-style:normal;font-display:swap}
+@font-face{font-family:"LXGW WenKai";src:url("assets/fonts/wenkai-medium.woff2") format("woff2");font-weight:600 900;font-style:normal;font-display:swap}
+:root{
+  --paper:#f5f2ea;--surface:#fffdf6;--ink:#1c1f23;--muted:#666b73;--line:#e0dacb;
+  --copper:#a2612a;--copper-soft:#f4e6d8;--steel:#2a6570;--steel-soft:#dfeef0;
+  --alert:#a33a27;--alert-soft:#f7e3dd;--shade:#14181c;
+  --serif:"LXGW WenKai","Songti SC","STSong","Noto Serif CJK SC",serif;
+  --sans:"LXGW WenKai",-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:32px}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.9;-webkit-font-smoothing:antialiased;text-spacing:ideograph-alpha}
+::selection{background:#d9e6e8}
+a{color:var(--steel);text-underline-offset:4px}
+a:hover{color:var(--copper)}
+button,a,input{touch-action:manipulation}
+button{cursor:pointer;color:inherit;font:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--copper);outline-offset:4px}
+img{display:block;max-width:100%;height:auto}
+p{margin:0 0 1.25em}
+h1,h2,h3,h4{line-height:1.5;text-wrap:balance}
+h1,h2,h3{font-family:var(--serif)}
+h2,h3,h4{margin:0}
+strong{font-weight:650}
+code{font-family:var(--mono);font-size:.87em;background:var(--steel-soft);padding:.12em .34em;border-radius:3px;overflow-wrap:anywhere}
+.progress{position:fixed;inset:0 auto auto 0;height:3px;width:100%;background:var(--copper);transform:scaleX(0);transform-origin:left;z-index:40;pointer-events:none}
+.wrap{max-width:1180px;margin:auto;padding-inline:36px}
+
+/* masthead */
+.masthead{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-block:26px 20px;border-bottom:1px solid var(--ink);font-size:12px;letter-spacing:.12em}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650}
+.brand-mark{width:22px;height:22px;display:block}
+.brand-mark svg{width:100%;height:100%;display:block}
+.edition{color:var(--muted);font-family:var(--mono);letter-spacing:.05em;font-size:11px}
+
+/* hero */
+.hero{padding-block:70px 54px;display:grid;grid-template-columns:1.08fr .92fr;gap:56px;align-items:center}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.08em;color:var(--muted);margin:0 0 28px;background:var(--surface);border:1px solid var(--line);padding:6px 14px 6px 10px;border-radius:100px}
+.eyebrow span{font-family:var(--mono);font-size:10px;color:var(--copper);letter-spacing:.14em;font-weight:600;padding-right:10px;border-right:1px solid var(--line)}
+.eyebrow strong{font-weight:600;color:var(--ink)}
+.hero h1{font-size:clamp(44px,5.2vw,72px);font-weight:800;line-height:1.14;letter-spacing:-.035em;margin:0 0 26px}
+.hero h1 em{font-style:normal;color:var(--steel);position:relative;white-space:nowrap}
+.hero h1 .sub{display:block;font-size:.42em;font-weight:400;letter-spacing:.02em;color:var(--muted);margin-top:16px;line-height:1.7}
+.dek-wrap{margin:0 0 30px;max-width:540px;border-left:3px solid var(--copper);padding-left:20px}
+.dek-tag{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--copper);letter-spacing:.05em;margin:0 0 10px}
+.dek{font-size:16px;line-height:1.9;color:#4c5258;margin:0}
+.hero-meta{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line);border-radius:100px;padding:5px 13px;background:var(--surface)}
+.art{margin:0;position:relative}
+.art-frame{border:1px solid var(--line);background:var(--surface);padding:10px;box-shadow:7px 9px 0 rgba(162,97,42,.10)}
+.art-frame svg{display:block;width:100%;height:auto}
+.art figcaption{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.7;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.art figcaption b{font-family:var(--mono);font-weight:600;color:var(--copper);letter-spacing:.04em}
+.art figcaption small{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;color:#95999f}
+
+/* opening + toc */
+.opening{padding-block:8px 26px;max-width:760px}
+.lead{font-size:19px;line-height:1.95;color:var(--ink)}
+.lead::first-letter{float:left;font-size:62px;line-height:.86;padding:8px 14px 0 0;color:var(--copper);font-weight:800}
+.scope{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;font-family:var(--mono);line-height:1.8}
+.toc{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:8px 0 64px}
+.toc a{background:var(--surface);padding:16px 18px;text-decoration:none;color:var(--ink);font-size:13.5px;display:flex;gap:12px;align-items:baseline;transition:background .2s}
+.toc a:hover{background:var(--copper-soft);color:var(--ink)}
+.toc a b{font-family:var(--mono);font-size:10.5px;color:var(--copper);letter-spacing:.08em}
+
+/* chapters */
+.chapter{padding-block:26px 44px;border-top:1px solid var(--ink);margin-top:36px}
+.chapter-head{display:grid;grid-template-columns:88px 1fr;gap:24px;align-items:start;margin-bottom:34px;padding-top:26px}
+.chapter-no{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.chapter-no svg{width:48px;height:48px;display:block}
+.chapter-no span{font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--copper);font-weight:600}
+.chapter-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.24em;color:var(--muted);margin:0 0 10px}
+.chapter-head h2{font-size:clamp(28px,3.1vw,40px);font-weight:800;letter-spacing:-.02em;line-height:1.3;margin:0 0 12px}
+.chapter-head p{color:var(--muted);font-size:14.5px;margin:0;max-width:620px;line-height:1.85}
+.chapter-stamp{display:inline-block;margin-top:16px;font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--copper);border:1px solid #ddc9b2;background:var(--copper-soft);padding:4px 10px}
+.reading{max-width:760px}
+.reading>h3{font-size:22px;font-weight:700;margin:42px 0 16px;letter-spacing:-.01em}
+.reading>h3 .n{font-family:var(--mono);font-size:11px;color:var(--copper);letter-spacing:.1em;margin-right:10px;vertical-align:2px}
+.reading p{font-size:16px;line-height:1.95}
+.reading ul,.reading ol{font-size:15.5px;line-height:1.9;padding-left:1.3em;margin:0 0 1.3em}
+.reading li{margin:.4em 0}
+.reading li::marker{color:var(--copper)}
+.pull{margin:34px 0;padding:22px 26px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--steel);font-size:18px;line-height:1.8;font-weight:500}
+.pull cite{display:block;margin-top:10px;font-style:normal;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted)}
+.note{background:var(--copper-soft);border:1px solid #e6d2bb;padding:16px 20px;font-size:14px;line-height:1.85;margin:24px 0;color:#5a4532}
+.note b{color:#7a4a1c}
+.note .tag{font-family:var(--mono);font-size:10px;letter-spacing:.16em;display:block;margin-bottom:6px;color:var(--copper);font-weight:600}
+.warn{background:var(--alert-soft);border-color:#e8c3b8;color:#60332a}
+.warn .tag{color:var(--alert)}
+.warn b{color:#822c1d}
+
+/* code */
+.code{background:var(--shade);color:#dfe3e6;border-radius:4px;margin:26px 0;overflow:hidden;font-size:13px;line-height:1.85}
+.code-head{display:flex;justify-content:space-between;gap:16px;padding:10px 18px;background:#1c2227;border-bottom:1px solid #2a3238;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:#8b949c}
+.code-head b{color:#d8b48a;font-weight:500}
+.code pre{margin:0;padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.8;tab-size:2}
+.code code{background:none;padding:0;font-size:inherit;color:inherit}
+.code .k{color:#e2a86d}
+.code .s{color:#9dc9a8}
+.code .c{color:#6f7a83;font-style:italic}
+.code .f{color:#9fc7d4}
+.code .n{color:#d8b48a}
+
+/* figure */
+.figure{margin:32px 0}
+.figure .fig-box{background:var(--surface);border:1px solid var(--line);padding:18px}
+.figure svg{display:block;width:100%;height:auto}
+.figure figcaption{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.75;display:flex;gap:12px;flex-wrap:wrap}
+.figure figcaption b{font-family:var(--mono);color:var(--copper);font-weight:600;letter-spacing:.04em;flex:none}
+
+/* table */
+.table-wrap{overflow-x:auto;margin:26px 0;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.7;min-width:520px}
+th{text-align:left;font-weight:650;background:#efece2;padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid #eee9dd;vertical-align:top}
+tr:last-child td{border-bottom:0}
+td code{font-size:11.5px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* sample rigs */
+.rig{max-width:760px;margin:40px 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px 22px 18px;box-shadow:6px 8px 0 rgba(162,97,42,.09)}
+.rig-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+.rig .rig-tag{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--copper);margin:0}
+.rig .rig-title{font-size:16px;font-weight:650;margin:4px 0 14px}
+.rig-stage{background:var(--shade);border:1px solid #2a3238;border-radius:8px;padding:18px;margin:0 0 14px;color:#e7e4dc;font-size:13px}
+.rig-ctrl{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;font-size:12px;color:var(--muted)}
+.ctrl{display:flex;align-items:center;gap:8px;flex:1;min-width:210px}
+.ctrl label{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;white-space:nowrap;color:#4e545b}
+.ctrl input[type=range]{flex:1;accent-color:var(--copper);min-width:90px}
+.ctrl output{font-family:var(--mono);font-size:12px;color:var(--ink);min-width:46px;text-align:right;font-variant-numeric:tabular-nums}
+.rig-btn{font-family:var(--sans);font-size:12.5px;letter-spacing:.04em;color:var(--steel);background:none;border:1px solid #b6c9cc;border-radius:100px;padding:6px 18px;transition:background .2s,color .2s}
+.rig-btn:hover{background:var(--steel);color:#fff}
+.rig-btn.on{background:var(--steel);color:#fff;border-color:var(--steel)}
+.rig-btn.copper{color:var(--copper);border-color:#d9c0a5}
+.rig-btn.copper:hover{background:var(--copper);color:#fff}
+.rig-cap{font-size:11.5px;color:var(--muted);margin:10px 0 0;font-family:var(--mono);line-height:1.7}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;color:#9aa1a7}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* footer */
+.site-foot{border-top:1px solid var(--ink);margin-top:70px;padding-block:34px 60px;display:grid;grid-template-columns:1.2fr 1fr;gap:36px;font-size:12.5px;color:var(--muted);line-height:1.9}
+.site-foot h4{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--copper);margin:0 0 10px;font-weight:600}
+.site-foot a{color:var(--muted)}
+.site-foot a:hover{color:var(--copper)}
+.colophon{border-left:3px solid var(--line);padding-left:18px}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:1fr;gap:36px;padding-block:48px 40px}
+  .toc{grid-template-columns:repeat(2,1fr)}
+  .chapter-head{grid-template-columns:1fr;gap:14px}
+  .chapter-no{flex-direction:row;align-items:center}
+  .wrap{padding-inline:22px}
+}
+@media (max-width:560px){
+  .toc{grid-template-columns:1fr}
+  .site-foot{grid-template-columns:1fr}
+  .reading p{font-size:15.5px}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+@media print{
+  .progress,.rig-ctrl,.rig-btn,.bg-grid{display:none!important}
+  body{background:#fff}
+  .code{background:#f4f4f2;color:#222}
+  .code-head{display:none}
+}
+
+/* rig internals */
+#rel-chart{display:block;width:100%;height:auto;background:#101417;border-radius:4px}
+.trace-row{display:flex;flex-wrap:wrap;gap:3px;margin-top:12px}
+.cell{width:22px;height:22px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0f1315;background:#4f8f74;font-weight:600}
+.cell.bad{background:#c4563f;color:#fff}
+.cell.spread{background:repeating-linear-gradient(45deg,#5c2f28,#5c2f28 3px,#3d2420 3px,#3d2420 6px);color:#c79a90;border:1px solid #7a3a2e}
+.trace-note{margin-top:10px;font-size:12px;line-height:1.8;color:#a9b2b9;font-family:var(--mono)}
+.trace-note b{color:#e59b8a}
+.ctx-bar{display:flex;width:100%;height:44px;border-radius:4px;overflow:hidden;background:#0d1114;border:1px solid #2a3238}
+.ctx-bar span{display:flex;align-items:center;justify-content:center;transition:width .35s ease;min-width:0}
+.ctx-bar i{font-style:normal;font-family:var(--mono);font-size:9px;color:#0f1315;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;font-weight:600}
+.ctx-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:#6f7a83;margin-top:5px}
+.ctx-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin:16px 0 10px}
+.ctx-stats>div{background:#1a2025;border:1px solid #2a3238;border-radius:4px;padding:8px 10px}
+.ctx-stats .k{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#8b949c;margin-bottom:3px}
+.ctx-stats b{font-family:var(--mono);font-size:14px;color:#dfe3e6;font-variant-numeric:tabular-nums}
+.ctx-stats b.ok{color:#7fc9a0}.ctx-stats b.warn{color:#e2b06d}.ctx-stats b.bad{color:#e58e7b}
+.ctx-warn{margin:0;padding-left:1.1em;font-size:12px;line-height:1.85;color:#d9a99c;font-family:var(--mono)}
+.ctx-warn li::marker{color:#c4563f}
+.ctx-ok{margin:0;font-size:12px;color:#8fbfa3;font-family:var(--mono)}
+.topo-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#8b949c;margin:0 0 14px;text-align:center}
+.topo-chat .chat-ring{position:relative;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:8px 0 4px}
+.chat-node{width:84px;flex:none}
+.node{background:#1e262b;border:1px solid #35414a;border-radius:6px;padding:10px 8px;text-align:center;transition:opacity .4s}
+.node b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:#dfe3e6}
+.node span{display:block;font-family:var(--mono);font-size:8px;color:#8b949c;margin-top:3px}
+.chat-wire{position:absolute;inset:auto 12% 4px;height:18px;border:1px dashed #4a5a63;border-top:0;border-radius:0 0 12px 12px;opacity:.55}
+.topo-layer .layer-boss{width:170px;margin:0 auto;text-align:center}
+.layer-boss{background:#2a2119;border:1px solid #6b5334;border-radius:6px;padding:10px 8px}
+.layer-boss b{display:block;font-family:var(--mono);font-size:10px;color:#e2b06d;letter-spacing:.08em}
+.layer-boss span{display:block;font-family:var(--mono);font-size:8px;color:#a08a6a;margin-top:3px}
+.layer-rail{width:1px;height:16px;background:#4a5a63;margin:0 auto}
+.layer-workers{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;position:relative}
+.layer-workers::before{content:"";position:absolute;top:-1px;left:16%;right:16%;height:1px;background:#4a5a63}
+.worker-node{width:104px;background:#15221f;border-color:#33514a}
+.worker-node b{color:#a8d8c4}
+.eff-bar{height:6px;background:#2a3238;border-radius:3px;overflow:hidden;margin:10px 0 8px}
+.eff-bar span{display:block;height:100%;background:linear-gradient(90deg,#2a6570,#7fc9a0);transition:width .4s}
+.topo-note{margin:0;font-size:11.5px;line-height:1.8;color:#a9b2b9;font-family:var(--mono)}
+@media (max-width:560px){
+  .ctx-stats{grid-template-columns:repeat(2,1fr)}
+  .chat-node{width:64px}
+}
+@media print{
+  .rig-stage{background:#f6f4ee!important;color:#1c1f23!important;border-color:#ccc}
+}
+</style>
+</head>
+<body>
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<header class="wrap masthead">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="3.4" stroke="#2a6570" stroke-width="1.8"/><circle cx="8.2" cy="8.2" r="1.9" fill="#a2612a"/><circle cx="15.8" cy="8.2" r="1.9" fill="#1c1f23"/><circle cx="8.2" cy="15.8" r="1.9" fill="#1c1f23"/><circle cx="15.8" cy="15.8" r="1.9" fill="#a2612a"/><path d="M8.2 10.1v3.8M10.1 8.2h3.8" stroke="#2a6570" stroke-width="1.4"/></svg></span>STARRYSEA · 造物手记</div>
+  <div class="edition">FIELD NOTES · VOL.04 · 2026.10</div>
+</header>
+
+<section class="wrap hero">
+  <div>
+    <p class="eyebrow"><span>VOL.04</span><strong>运行时解剖 · 写给写完 Hello World 的人</strong></p>
+    <h1>Agent <em>内核</em>
+      <span class="sub">把概率关进确定性的笼子</span>
+    </h1>
+    <div class="dek-wrap">
+      <p class="dek-tag">dek / 摘要</p>
+      <p class="dek">所有 Agent 教程都教你画那个循环：想一步、做一步、看一眼。但没人告诉你，这个循环在第十一步会开始骗自己。这篇文章拆开一台真正跑在生产的 Agent，看它怎样用<strong>状态机、验证器、上下文分级与执行日记</strong>，把一个概率函数驯化成可以托付的系统。</p>
+    </div>
+    <div class="hero-meta">
+      <span class="pill">约 38 分钟</span>
+      <span class="pill">6 章 · 3 枚小样</span>
+      <span class="pill">含可运行伪代码</span>
+      <span class="pill">2026.10</span>
+    </div>
+  </div>
+  <figure class="art">
+    <div class="art-frame">
+      <img src="assets/art/fig-kernel.webp" alt="Agent 运行时内核的机械剖面：黄铜与钢铁构成的外壳里，包裹着一团旋转的概率粒子，被确定性的轨道约束" loading="eager"/>
+    </div>
+    <figcaption><b>图 0</b>一台 Agent 的剖面：外面是会犯错却不能失控的部分，里面是会思考却不可控的部分。<small>illustration · GPT 系图像模型</small></figcaption>
+  </figure>
+</section>
+
+<main>
+<div class="wrap">
+<div class="opening">
+  <p class="lead">先说一句得罪人的话：你在教程里看到的 Agent，几乎都不是 Agent，而是一个带工具调用的聊天循环。它能在演示里帮你订机票，是因为演示只跑一次；它在生产里活不过一周，是因为生产要跑一万次。</p>
+  <p>这中间的差距不是「模型不够强」。过去两年模型强了十倍，而绝大多数 Agent 项目的失败原因没有变过：<strong>不可控、不可复现、不可归因</strong>。这三件事都不归模型管，归运行时管。</p>
+  <p>所以这篇文章不聊提示词技巧，也不聊框架选型。我们只做一件事：把一台 Agent 的内核拆到零件级，看每个零件为什么长这样。读完你应该能自己写一个不到两千行、但敢让它碰生产文件的内核。</p>
+  <p class="scope">全文约 13000 字 · 6 章 · 3 枚可交互小样 · 代码为 TypeScript 伪代码，刻意省略了框架细节 · 文中数据来自本地实测与公开基准，标注在文末</p>
+</div>
+  <nav class="toc" aria-label="章节索引">
+    <a href="#ch1"><b>01</b>控制流的幻觉</a>
+    <a href="#ch2"><b>02</b>0.95 的十次方</a>
+    <a href="#ch3"><b>03</b>上下文的熵</a>
+    <a href="#ch4"><b>04</b>工具即界面</a>
+    <a href="#ch5"><b>05</b>多智能体的迷思</a>
+    <a href="#ch6"><b>06</b>崩溃之后</a>
+  </nav>
+</div>
+
+<div class="wrap">
+<section class="chapter" id="ch1">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <circle cx="24" cy="24" r="17" stroke="#2a6570" stroke-width="2"/>
+        <path d="M24 12v9l6 4" stroke="#1c1f23" stroke-width="2" stroke-linecap="round"/>
+        <path d="M36 17a15 15 0 0 1 0 14" stroke="#a2612a" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="24" cy="24" r="2.2" fill="#a2612a"/>
+      </svg>
+      <span>01</span>
+    </div>
+    <div>
+      <p class="chapter-label">CONTROL FLOW</p>
+      <h2>控制流的幻觉：谁在开这辆车</h2>
+      <p>ReAct 不是一个架构，是一个建议。当你把它当成架构来用，你就把调度权交给了一个每次都会重新读一遍需求文档的司机。</p>
+      <span class="chapter-stamp">造物手记 · 01 / 06</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>先说一个我自己的事故。去年冬天，我写了一个巡检 Agent，任务很朴素：连上五台机器，检查磁盘、内存、容器状态，生成一份日报。本地跑 demo 时它二十秒交卷，漂亮得像模像样。放到定时任务里跑了三天，第三天早上它交上来的报告里，五台机器全是「正常」——而其中一台的磁盘已经 98%。</p>
+    <p>我翻日志，看到了那个熟悉的形状：<code>ssh_exec</code> 调用返回被截断了。模型以为命令失败，于是重试；重试又被截断；它第三次换了条命令，还是截断。第十一步，它决定「跳过这台机器」，因为「多次尝试均失败」；第十二步，它把跳过写进了「正常」的汇总里。整条链路里，没有任何一个环节是愚蠢的，每一个环节都很合理。<strong>合理的局部决策，堆出了一个荒谬的全局结果</strong>——这就是自循环 Agent 的默认命运。</p>
+
+    <h3><span class="n">1.1</span>那个循环到底缺了什么</h3>
+    <p>几乎所有教程都从这张图开始：</p>
+
+    <div class="code">
+      <div class="code-head"><b>tutorial.ts</b><span>the loop everyone writes</span></div>
+      <pre><code><span class="k">while</span> (<span class="k">true</span>) {
+  <span class="k">const</span> res = <span class="k">await</span> model.call({ messages, tools });
+  <span class="k">if</span> (res.tool_calls.length === <span class="n">0</span>) <span class="k">return</span> res.content;   <span class="c">// 它说完了</span>
+  <span class="k">for</span> (<span class="k">const</span> call <span class="k">of</span> res.tool_calls) {
+    messages.push(<span class="k">await</span> runTool(call));                     <span class="c">// 它做了</span>
+  }
+}</code></pre>
+    </div>
+
+    <p>这十四行代码里有三个致命缺陷，而且它们互相掩护，让你在 demo 阶段永远发现不了：</p>
+    <ol>
+      <li><strong>没有终止性证明。</strong>唯一的退出条件是「模型不再调用工具」。这句话的逆否命题是：只要它一直调用，你就会一直转。工具失败、返回为空、参数不合法——没有任何一种情况能让循环自己停下来。</li>
+      <li><strong>没有状态不变量。</strong>消息数组只增不减，它是「发生过什么」的记录，而不是「现在处于什么状态」的表示。两者的区别是：前者需要模型重新推理才能得到后者，而每一次重新推理都可能得出不同结论。</li>
+      <li><strong>没有责任边界。</strong>决定「下一步做什么」的是模型，决定「什么时候停」的也是模型。一个系统里，被监督者同时是监督者，这不是自治，这是无人驾驶。</li>
+    </ol>
+
+    <h3><span class="n">1.2</span>控制反转：内核开车，模型看路</h3>
+    <p>真正跑得住的 Agent，都有一个反直觉的结构：<strong>循环由内核持有，模型只被允许在某个特定的槽位里填一个值</strong>。这个思路在系统编程里一点都不新鲜，它叫控制反转（Inversion of Control）——你不要把调度权交给被调度的东西。</p>
+    <p>具体到 Agent，就是把「下一步做什么」这个开放问题，改写成「在当前状态下，从这几个合法动作里选一个」这个封闭问题。前者是无穷解空间，后者是一个枚举。</p>
+
+    <div class="figure">
+      <div class="fig-box">
+        <svg viewBox="0 0 720 300" role="img" aria-label="两种控制流对比：左侧自由循环，右侧状态机">
+          <defs>
+            <marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#666b73"/></marker>
+            <marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#a2612a"/></marker>
+          </defs>
+          <!-- left -->
+          <text x="30" y="24" font-family="monospace" font-size="10" letter-spacing="1.6" fill="#a33a27">L0 · FREE LOOP</text>
+          <rect x="30" y="40" width="290" height="222" rx="10" fill="none" stroke="#b9b3a5" stroke-width="1.2"/>
+          <g fill="#fffdf6" stroke="#666b73" stroke-width="1.5">
+            <circle cx="110" cy="96" r="26"/>
+            <rect x="190" y="70" width="100" height="52" rx="6"/>
+            <rect x="190" y="176" width="100" height="46" rx="6"/>
+          </g>
+          <g fill="none" stroke="#666b73" stroke-width="1.5" marker-end="url(#a2)">
+            <path d="M136 96 H184"/>
+            <path d="M240 122 V170"/>
+            <path d="M190 199 H110 V128"/>
+          </g>
+          <text x="110" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#1c1f23">model</text>
+          <text x="240" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#1c1f23">tool</text>
+          <text x="240" y="204" font-family="monospace" font-size="9" text-anchor="middle" fill="#1c1f23">push</text>
+          <text x="122" y="150" font-family="monospace" font-size="8" fill="#a33a27">forever</text>
+          <text x="40" y="230" font-family="monospace" font-size="8" fill="#a33a27">no exit</text>
+          <text x="40" y="243" font-family="monospace" font-size="8" fill="#a33a27">no invariant</text>
+          <text x="40" y="256" font-family="monospace" font-size="8" fill="#a33a27">no owner</text>
+          <text x="175" y="283" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#666b73">messages 只增不减，状态靠重新推理</text>
+
+          <!-- right -->
+          <text x="380" y="24" font-family="monospace" font-size="10" letter-spacing="1.6" fill="#2a6570">L1 · PHASED STATE MACHINE</text>
+          <rect x="380" y="40" width="310" height="222" rx="10" fill="none" stroke="#b9b3a5" stroke-width="1.2"/>
+          <g fill="#fffdf6" stroke="#2a6570" stroke-width="1.4">
+            <rect x="404" y="62" width="76" height="34" rx="17"/><text x="442" y="84" font-family="monospace" font-size="8.5" text-anchor="middle">PLAN</text>
+            <rect x="508" y="62" width="76" height="34" rx="17"/><text x="546" y="84" font-family="monospace" font-size="8.5" text-anchor="middle">ACT</text>
+            <rect x="508" y="142" width="76" height="34" rx="17"/><text x="546" y="164" font-family="monospace" font-size="8.5" text-anchor="middle">CHECK</text>
+            <rect x="404" y="142" width="76" height="34" rx="17"/><text x="442" y="164" font-family="monospace" font-size="8.5" text-anchor="middle">REPAIR</text>
+            <rect x="456" y="212" width="76" height="34" rx="17" stroke="#a2612a"/><text x="494" y="234" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#a2612a">DONE</text>
+          </g>
+          <g stroke="#2a6570" stroke-width="1.4" fill="none" marker-end="url(#a3)">
+            <path d="M480 79 H502"/>
+            <path d="M546 96 V136"/>
+            <path d="M508 159 H486"/>
+            <path d="M442 176 V229 H450"/>
+            <path d="M540 176 q22 20 -8 34" stroke="#a2612a"/>
+          </g>
+          <text x="600" y="120" font-family="monospace" font-size="8" fill="#666b73">model 只在</text>
+          <text x="600" y="132" font-family="monospace" font-size="8" fill="#666b73">ACT 内部</text>
+          <text x="600" y="144" font-family="monospace" font-size="8" fill="#666b73">做局部决策</text>
+          <text x="535" y="283" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#666b73">状态由内核持有，退出条件是显式的</text>
+        </svg>
+      </div>
+      <figcaption><b>图 1-1</b>左边的循环把「下一步」交给模型，右边的循环把「下一步」交给状态迁移表。模型在右边仍然重要，但它不再拥有方向盘。<small>diagram · SVG</small></figcaption>
+    </div>
+
+    <p>注意右边这张图里，模型并没有被削弱。它仍然要理解任务、生成参数、解释结果、提出修复方案——这些恰恰是它不可替代的地方。它只是不再被允许决定「现在该处于哪个阶段」。<strong>把创造性留给模型，把状态纪律留给代码</strong>，这是所有可靠 Agent 的共同骨架。</p>
+
+    <h3><span class="n">1.3</span>确定性的三个档位</h3>
+    <p>控制流的确定性不是二元的，它是一个渐变。按我的经验，可以粗分成三档，每一档对应一种任务形态：</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>档位</th><th>结构</th><th>模型负责</th><th>适用</th><th>失效方式</th></tr></thead>
+        <tbody>
+          <tr><td><b>L0</b></td><td>自由 ReAct 循环</td><td>规划 + 选工具 + 判断结束</td><td>一次性探索、演示、开放问答</td><td>死循环、目标漂移、预算耗尽</td></tr>
+          <tr><td><b>L1</b></td><td>阶段化状态机，阶段内 ReAct</td><td>阶段内选动作、填参数</td><td>绝大多数业务 Agent：巡检、写作、修 bug</td><td>阶段边界判断错、修复循环</td></tr>
+          <tr><td><b>L2</b></td><td>完全编排 DAG，节点是确定函数</td><td>分类、抽取、生成、打分</td><td>高合规、可审计、批量处理</td><td>遇到分布外输入时静默错配</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>大多数团队的误区是：以为自己在 L1，其实写的是 L0；或者反过来，明明任务需要一点判断力，却把它压成了 L2，结果每个没见过的输入都要改一次代码。选择档位的判据只有一句话：<strong>这一步错了，系统能不能自己发现？</strong>能发现，就允许模型自由一点；发现不了，就必须用结构把它锁死。</p>
+
+    <h3><span class="n">1.4</span>混合执行模型：确定性骨架 + 概率节点</h3>
+    <p>下面是这套内核的骨架。它是伪代码，但每一行的位置都是被事故打磨出来的：</p>
+
+    <div class="code">
+      <div class="code-head"><b>kernel.ts</b><span>确定性骨架，概率节点</span></div>
+      <pre><code><span class="k">type</span> Phase = <span class="s">"survey"</span> | <span class="s">"plan"</span> | <span class="s">"act"</span> | <span class="s">"verify"</span> | <span class="s">"repair"</span> | <span class="s">"done"</span> | <span class="s">"halt"</span>;
+
+<span class="k">interface</span> TaskState {
+  phase: Phase;
+  goal: string;                 <span class="c">// 不可变，只读</span>
+  plan: Step[] | <span class="k">null</span>;
+  cursor: <span class="k">number</span>;
+  findings: Finding[];          <span class="c">// 结构化事实，不是聊天记录</span>
+  attempts: Map&lt;<span class="k">string</span>, <span class="k">number</span>&gt;;   <span class="c">// 动作指纹 -&gt; 次数</span>
+  budget: { tokens: <span class="k">number</span>; steps: <span class="k">number</span>; deadline: <span class="k">number</span> };
+  halt?: { reason: <span class="k">string</span>; evidence: <span class="k">string</span>[] };
+}
+
+<span class="k">async function</span> <span class="f">tick</span>(state: TaskState): Promise&lt;TaskState&gt; {
+  <span class="k">if</span> (<span class="f">shouldHalt</span>(state)) <span class="k">return</span> { ...state, phase: <span class="s">"halt"</span> };   <span class="c">// 预算是第一公民</span>
+
+  <span class="k">switch</span> (state.phase) {
+    <span class="k">case</span> <span class="s">"survey"</span>: <span class="k">return</span> { ...state, phase: <span class="s">"plan"</span>, findings: <span class="k">await</span> <span class="f">probe</span>(state) };
+    <span class="k">case</span> <span class="s">"plan"</span>:   <span class="k">return</span> { ...state, phase: <span class="s">"act"</span>, plan: <span class="k">await</span> <span class="f">plan</span>(state) };      <span class="c">// 模型出计划</span>
+    <span class="k">case</span> <span class="s">"act"</span>: {
+      <span class="k">const</span> step = state.plan[state.cursor];
+      <span class="k">const</span> guard = <span class="f">checkPreconditions</span>(step, state);                 <span class="c">// 确定性守卫</span>
+      <span class="k">if</span> (!guard.ok) <span class="k">return</span> { ...state, phase: <span class="s">"repair"</span>, findings: [...state.findings, guard.block] };
+      <span class="k">const</span> out = <span class="k">await</span> <span class="f">execute</span>(step, state);                        <span class="c">// 副作用在这里</span>
+      <span class="k">return</span> { ...state, phase: <span class="s">"verify"</span>, findings: [...state.findings, out] };
+    }
+    <span class="k">case</span> <span class="s">"verify"</span>: {
+      <span class="k">const</span> verdict = <span class="k">await</span> <span class="f">verify</span>(state);                     <span class="c">// 编译器 / 测试 / schema / 模型</span>
+      <span class="k">if</span> (verdict.ok) <span class="k">return</span> <span class="f">advance</span>(state);
+      <span class="k">return</span> { ...state, phase: <span class="s">"repair"</span>, findings: [...state.findings, verdict.failure] };
+    }
+    <span class="k">case</span> <span class="s">"repair"</span>: <span class="k">return</span> <span class="f">repair</span>(state);                        <span class="c">// 有上限的修复</span>
+    <span class="k">default</span>: <span class="k">return</span> state;
+  }
+}</code></pre>
+    </div>
+
+    <p>这段代码里有一个容易被忽略的细节：<code>findings</code> 是一个结构化数组，不是 <code>messages</code>。它记录的是「已知为真的事实」，比如「磁盘 /dev/sda1 使用率 98%」，而不是「模型说过什么」。下一章会讲为什么这个区分直接决定了长任务的生死。</p>
+
+    <div class="note">
+      <span class="tag">KERNEL NOTE / 01</span>
+      <b>状态不等于上下文。</b>状态是内核持有的、可以被断言的数据结构；上下文是这一轮喂给模型的、可以被裁剪的视图。把两者混为一谈，你就永远无法回答「它现在到底知道什么」这个问题。
+    </div>
+
+    <h3><span class="n">1.5</span>停手条件：把「停不下来」变成不可能</h3>
+    <p>状态机解决了「往哪走」，还需要解决「什么时候必须停」。生产系统里，停手条件必须是内核自己的责任，而且至少有五道：</p>
+    <ul>
+      <li><strong>预算墙</strong>：token、步数、墙钟时间、工具调用次数，任意一项触顶即 <code>halt</code>。预算不是省钱用的，是防失控用的。</li>
+      <li><strong>重复检测</strong>：对 <code>(tool_name, 参数哈希)</code> 计数，同一指纹出现 3 次即判定为循环。注意要哈希参数而不是整个调用，因为模型会在参数里加点无关的装饰。</li>
+      <li><strong>无进展检测</strong>：每轮对 <code>findings</code> 取哈希，连续两轮不变即判定为原地打转。</li>
+      <li><strong>验证连续失败</strong>：同一阶段连续 2 次验证不过，不再修复，直接升级给人的。</li>
+      <li><strong>人类缺席条款</strong>：需要审批但拿不到人，超时后必须走「安全默认值」并留下待办，而不是假装成功。</li>
+    </ul>
+    <p>最后一条最容易被忽略。我见过太多系统，在等待人工审批时无限挂起，最后被上游当成成功。停不下来和假装成功，是同一种病的两种症状。</p>
+
+    <h3><span class="n">1.6</span>阶段粒度：七个阶段还是七十个</h3>
+    <p>状态机设计里最常见的两个错误，正好相反：阶段划得太粗，等于没划；划得太细，等于把代码写进了配置。</p>
+    <p>我把判据定成这样：<strong>一个阶段，对应一种「失败之后需要不同处理」的处境</strong>。这句话有点绕，举个例子就清楚了。巡检任务里，「读取磁盘」和「读取内存」失败了，处理方式完全一样（重试一次，失败就标记 unverified），所以它们不该是两个阶段，而应该是同一个 <code>probe</code> 阶段的两个步骤。反过来，「写文件」和「跑测试」失败了，处理方式完全不同（前者回滚，后者改代码），所以它们必须是两个阶段。</p>
+    <p>按这条判据，一个中等任务的阶段数通常在 4 到 8 个之间。超过 12 个，你要么在描述一个大型流水线（那该用 DAG 而不是状态机），要么在把每个函数都包装成阶段（那是过度设计）。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>现象</th><th>说明什么</th><th>改法</th></tr></thead>
+        <tbody>
+          <tr><td>两个阶段之间反复横跳</td><td>它们其实是一个阶段的两种入口</td><td>合并，用子类型区分</td></tr>
+          <tr><td>某个阶段里出现了 switch</td><td>阶段内部还有一层状态</td><td>拆成独立阶段，或承认这是子状态机</td></tr>
+          <tr><td>阶段数超过 12 个</td><td>你在写流程图，不是在写状态机</td><td>抽成 DAG 编排，或按领域分层</td></tr>
+          <tr><td>有阶段从不被别人跳入</td><td>可能是死代码</td><td>删掉，或者补上触发条件</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>还有一个必须说的话：<strong>状态机本身也是要测的</strong>。你可以不 mock 模型，但必须测迁移表——给定一个状态和一个动作，下一个状态是否唯一。这类测试是纯函数的，跑一千次零成本，能抓住绝大多数「某个分支永远走不到」的低级错误。</p>
+
+    <div class="pull">
+      一个 Agent 的自由度，应该和它的自我纠错能力成正比。不能发现自己错的时候，就不该允许它自由。
+      <cite>— 本文的核心判据</cite>
+    </div>
+  </div>
+</section>
+<section class="chapter" id="ch2">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M6 38 L20 24 L30 30 L42 12" stroke="#2a6570" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M6 38 L18 30 L26 34 L34 26" stroke="#a33a27" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3"/>
+        <circle cx="42" cy="12" r="2.4" fill="#a2612a"/>
+        <path d="M34 40h10M39 35v10" stroke="#666b73" stroke-width="1.4"/>
+      </svg>
+      <span>02</span>
+    </div>
+    <div>
+      <p class="chapter-label">RELIABILITY</p>
+      <h2>0.95 的十次方：可靠性断崖</h2>
+      <p>单步 95% 听起来很稳。十步之后是 59.8%，二十步之后是 35.8%。工程不是靠祈祷跨过这道算术的。</p>
+      <span class="chapter-stamp">造物手记 · 02 / 06</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>每个做 Agent 的人都算过一次这个乘法，但很少有人真的相信它。因为第一次算出来的时候，你会在心里给它找补：我的每步不止 95%；失败可以重试；模型没那么笨。这三句辩解，第一句是乐观，第二句是幻觉，第三句是转移话题。我们先把它算干净。</p>
+
+    <h3><span class="n">2.1</span>不存在「平均的单步成功率」</h3>
+    <p>把任务看成一条链，端到端成功率 <code>P = p₁ × p₂ × … × pₙ</code>。如果每步都是 0.95：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>步数</th><th class="num">5</th><th class="num">10</th><th class="num">15</th><th class="num">20</th><th class="num">30</th><th class="num">50</th></tr></thead>
+        <tbody>
+          <tr><td>0.95<sup>n</sup></td><td class="num">77.4%</td><td class="num">59.9%</td><td class="num">46.3%</td><td class="num">35.8%</td><td class="num">21.5%</td><td class="num">7.7%</td></tr>
+          <tr><td>0.99<sup>n</sup></td><td class="num">95.1%</td><td class="num">90.4%</td><td class="num">86.0%</td><td class="num">81.8%</td><td class="num">74.0%</td><td class="num">60.5%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>这张表最反直觉的地方不是数字本身，而是它的斜率：<strong>从 0.95 提到 0.99，五十步任务的成功率从 7.7% 涨到 60.5%——八倍</strong>。单步可靠性的边际收益在高步数下是复利的。反过来，任何让单步可靠性掉 2 个点的「优化」，都可能让长任务直接归零。</p>
+    <p>但真实世界比这个乘法更糟，因为独立性假设不成立。第 5 步读错了一个文件，第 6 步基于这个错误做判断，第 7 步又基于第 6 步的判断写文件——错误不会停在原地，它会<strong>写进状态</strong>。所以真实的衰减曲线通常比 <code>pⁿ</code> 更陡，而且在某个点之后是断崖而不是斜坡：一旦污染进入持久状态，后面的验证器也在验证一个错误的世界。</p>
+
+    <figure class="art" style="margin:34px 0">
+      <div class="art-frame">
+        <img src="assets/art/fig-bridge.webp" alt="一张插图：一座铆接的钢桥横跨峡谷，靠近观者的一半结实完整，远端逐渐坍塌、消散在雾里，一颗铆钉发着暗红的光" loading="lazy"/>
+      </div>
+      <figcaption><b>图 2-0</b>一条长任务链的真实形态：前几步你还能看见铆钉，越往远处越是靠信念。那颗发红的铆钉，就是你第一次放过的那条错误证据。<small>illustration · GPT 系图像模型</small></figcaption>
+    </figure>
+
+    <h3><span class="n">2.2</span>三道防线，而不是一次重试</h3>
+    <p>大多数「可靠性设计」只有一个动作：失败重试。这是最弱的一道防线，因为它假设失败是瞬时的（网络抖动、限流），而 Agent 的失败大部分是语义的（选错工具、参数错、理解错），重试一百次也还是错的——更糟的是，每次重试都把新的错误信息塞进上下文，让下一次更容易错。</p>
+    <p>真正有效的防线有三道，按成本从低到高：</p>
+
+    <h4>第一道：前置守卫（Guard）</h4>
+    <p>在动作执行<em>之前</em>，用确定性代码检查前提。文件存在吗？schema 合法吗？预算够吗？这个工具在当前阶段被允许吗？守卫的价值在于它把「模型犯错」挡在了副作用发生之前。一个 20 行的 <code>checkPreconditions</code>，能消掉我系统里大约三分之一的事故。</p>
+
+    <h4>第二道：后置验证（Oracle）</h4>
+    <p>动作执行<em>之后</em>，用一个不依赖模型的检查器判断结果对不对。oracle 分三层，越往下越贵但越可信：</p>
+    <ul>
+      <li><strong>语法层</strong>：JSON 能否解析、HTML 能否闭合、TypeScript 能否编译、diff 是否只碰了允许的文件。毫秒级，免费。</li>
+      <li><strong>语义层</strong>：单元测试、lint、schema 校验、引用完整性检查。秒级，便宜。</li>
+      <li><strong>事实层</strong>：跑起来看行为、对比外部数据源、让另一个模型当评审。分钟级，贵，但能抓到前两层漏掉的错。</li>
+    </ul>
+    <p>第三层听起来像「用模型验证模型」的循环论证，其实不是：<strong>评审者的任务比执行者窄得多</strong>。让模型「写一个正确的函数」很难，让它「判断这个函数是否满足这三条断言」容易得多。窄任务的准确率天然更高，这就是裁判比运动员可靠的原因。</p>
+
+    <h4>第三道：补偿与回滚（Compensation）</h4>
+    <p>副作用一旦发生，验证就晚了。所以写操作必须可撤销：先写临时文件再原子重命名、先建草稿再发布、数据库操作用事务、外部调用用幂等键。做不到可撤销的，就必须人审。这条没有捷径。</p>
+
+    <div class="note">
+      <span class="tag">KERNEL NOTE / 02</span>
+      <b>验证覆盖率比模型能力更值得投资。</b>我把一个任务的单步成功率从 0.95 提到 0.98，需要换更贵的模型，成本翻三倍；而给它加一个能覆盖 80% 错误的 oracle，成本是两百行代码。后者通常更有效，因为它同时解决了我看不见的失败模式。
+    </div>
+
+    <div class="rig" id="rig-reliability">
+      <div class="rig-head">
+        <p class="rig-tag">SAMPLE 01 / RELIABILITY CLIFF</p>
+        <div class="legend">
+          <span><i style="background:#a33a27"></i>裸奔链</span>
+          <span><i style="background:#2a6570"></i>有守卫+验证+修复</span>
+        </div>
+      </div>
+      <p class="rig-title">把步数和单步成功率推到极端，看任务在哪一步死</p>
+      <div class="rig-stage">
+        <svg id="rel-chart" viewBox="0 0 680 268" role="img" aria-label="端到端成功率随步数下降的曲线"></svg>
+        <div id="rel-trace" aria-live="polite"></div>
+      </div>
+      <div class="rig-ctrl">
+        <div class="ctrl"><label for="rel-steps">步数</label><input id="rel-steps" type="range" min="1" max="30" value="10" step="1"/><output id="rel-steps-out">10</output></div>
+        <div class="ctrl"><label for="rel-p">单步成功率</label><input id="rel-p" type="range" min="80" max="99" value="95" step="1"/><output id="rel-p-out">95%</output></div>
+        <button class="rig-btn" id="rel-run" type="button">跑一次</button>
+      </div>
+      <p class="rig-cap" id="rel-cap">端到端：裸奔 59.9% · 防线 98.1%。点「跑一次」看这次死在第几步。</p>
+    </div>
+
+    <p>上图的模型刻意做得很简单，你可以自己核：防御链的单步有效率按 <code>1 − (1−p)(1−v·r)</code> 估，其中验证覆盖率 <code>v = 0.9</code>、修复成功率 <code>r = 0.7</code>。这两个数字不是拍脑袋——它们来自我系统里三个月的修复日志，不达标就退回重做。<strong>把假设写在明面上，比把成功率吹到 99.9% 有用得多。</strong></p>
+
+    <h3><span class="n">2.3</span>重试的三个层级，别用第一层解决第三层的问题</h3>
+    <p>失败不是一个东西。至少分三类，对应三种完全不同的处理：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>失败类型</th><th>例子</th><th>正确动作</th><th>重试有用吗</th></tr></thead>
+        <tbody>
+          <tr><td>瞬时</td><td>429、连接重置、超时</td><td>指数退避 + 抖动，同参数重试</td><td>有用，但要有上限</td></tr>
+          <tr><td>参数</td><td>路径写错、schema 少字段</td><td>把结构化错误喂回去，改参数重试</td><td>有用，但只给一次</td></tr>
+          <tr><td>语义</td><td>选错工具、误解目标</td><td>退回上一阶段重新规划，或换策略</td><td>没用，越试越糟</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>区分它们不靠模型，靠内核的分类器：错误码、异常类型、返回值结构。我的做法是让每个工具声明自己的错误分类，内核只做路由。这比让模型「判断这次失败要不要重试」可靠一个数量级——因为模型看不到错误码，它只看到一段自然语言。</p>
+
+    <div class="code">
+      <div class="code-head"><b>retry.ts</b><span>三次尝试，三种策略</span></div>
+      <pre><code><span class="k">async function</span> <span class="f">withPolicy</span>&lt;T&gt;(op: Op&lt;T&gt;, state: TaskState): Promise&lt;T&gt; {
+  <span class="k">for</span> (<span class="k">let</span> attempt = <span class="n">0</span>; attempt &lt; op.maxAttempts; attempt++) {
+    <span class="k">try</span> { <span class="k">return</span> <span class="k">await</span> op.run(); }
+    <span class="k">catch</span> (e) {
+      <span class="k">const</span> kind = <span class="f">classify</span>(e);                       <span class="c">// transient | param | semantic</span>
+      <span class="k">if</span> (kind === <span class="s">"semantic"</span>) <span class="k">throw</span> <span class="f">escalate</span>(e, <span class="s">"replan"</span>);
+      <span class="k">if</span> (kind === <span class="s">"param"</span> &amp;&amp; attempt &gt; <span class="n">0</span>) <span class="k">throw</span> <span class="f">escalate</span>(e, <span class="s">"replan"</span>);
+      <span class="k">await</span> <span class="f">sleep</span>(<span class="f">backoff</span>(attempt) + Math.random() * <span class="n">250</span>);  <span class="c">// 抖动防同步风暴</span>
+    }
+  }
+  <span class="k">throw</span> <span class="f">escalate</span>(<span class="k">new</span> Error(<span class="s">"attempts_exhausted"</span>), <span class="s">"human"</span>);
+}</code></pre>
+    </div>
+
+    <p>还有一个细节值得单独说：<strong>重试预算必须共享</strong>。如果每个工具都有自己的 3 次重试，一个 10 步任务在最坏情况下会变成 30 次调用，而上下文里会堆 30 段错误信息。正确做法是内核持有一个全局重试预算，任何一步消耗它，用完即停。局部最优在这里会直接杀死全局。</p>
+
+    <h3><span class="n">2.4</span>把「不知道」变成一等公民</h3>
+    <p>可靠性设计里最被低估的一件事，是允许系统说「我不知道」。二值化的 Agent 只有成功和失败，于是它会把不确定的结果硬掰成成功——这正是开头那个巡检故事的真正病灶。三值逻辑救不了所有问题，但它能救这一半：</p>
+    <ul>
+      <li><code>verified</code>：有 oracle 通过，可以继续。</li>
+      <li><code>unverified</code>：执行成功了，但没有独立证据。允许继续，但结果必须标记，且不能作为后续决策的唯一依据。</li>
+      <li><code>contradicted</code>：有证据表明失败。必须修复或升级。</li>
+    </ul>
+    <p>我的日报系统后来改成：任何 <code>unverified</code> 的检查项，在报告里单独列一节「未能确认」，并附上原始输出。上线之后，它再也没有「全部正常」过——因为它终于被允许说「这台机器我没连上」。</p>
+  </div>
+</section>
+<section class="chapter" id="ch3">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M12 5h16l8 8v30H12z" stroke="#2a6570" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M28 5v8h8" stroke="#2a6570" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M17 23h14M17 28h14M17 33h8" stroke="#666b73" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M30 36l5 5 7-9" stroke="#a2612a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>03</span>
+    </div>
+    <div>
+      <p class="chapter-label">CONTEXT</p>
+      <h2>上下文的熵：为什么记得越多，错得越离谱</h2>
+      <p>窗口从 8K 涨到 1M，事故率没有下降。因为问题从来不是装不下，而是装进去之后，模型不知道该看哪。</p>
+      <span class="chapter-stamp">造物手记 · 03 / 06</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>2023 年大家说「上下文太短，长任务做不了」。2025 年窗口管够了，长任务依然做不了。这时候解释变成了「模型注意力不行」。这个解释不算错，但它没有操作性——你没法改模型，你只能改你塞进去的东西。<strong>上下文工程的本质，不是搬运信息，是管理信噪比。</strong></p>
+
+    <h3><span class="n">3.1</span>三个机制，三种失败</h3>
+    <p>关于长上下文的论文很多，真正对工程有指导意义的是三个结论。我把它们翻译成你会遇到的症状：</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>机制</th><th>论文里的说法</th><th>你看到的症状</th><th>工程对策</th></tr></thead>
+        <tbody>
+          <tr><td>中间遗忘</td><td>Lost in the Middle：信息位置呈 U 形，首尾强、中间弱</td><td>它在第 3 轮看过的那条约束，第 15 轮完全忘了</td><td>关键约束放首尾；每轮重述目标；用结构化状态而非历史</td></tr>
+          <tr><td>注意力汇</td><td>Attention Sinks：模型把注意力堆在开头几个 token 上</td><td>删掉开头的系统提示，行为立刻变差，哪怕后面还留着摘要</td><td>固定前缀别动；把稳定内容放前面，利用前缀缓存</td></tr>
+          <tr><td>干扰效应</td><td>无关上下文降低检索与推理准确率，且随长度加剧</td><td>工具输出里 90% 的日志没用，但它污染了判断</td><td>工具返回值裁剪；无关历史移出上下文</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>注意第三条：它说的不是「长上下文不好」，而是「<strong>无关内容有害</strong>」。这两者差别巨大。一个 100K 的高密度上下文，可能比一个 30K 的垃圾场更好用。所以「省 token」不是目的，「提高密度」才是。</p>
+
+    <figure class="art" style="margin:34px 0">
+      <div class="art-frame">
+        <img src="assets/art/fig-funnel.webp" alt="一张插图：漏斗上方涌入大量杂乱的纸片，经漏斗过滤后分别落入三个抽屉——一个小工作盘、一个卡片柜、一卷长档案" loading="lazy"/>
+      </div>
+      <figcaption><b>图 3-0</b>上下文装配的形状：上面是全部发生过的事，下面是这一轮真正需要的东西。漏斗不是装饰，它是唯一让长期任务活下来的器官。<small>illustration · GPT 系图像模型</small></figcaption>
+    </figure>
+
+    <h3><span class="n">3.2</span>四级存储：把记忆从对话里救出来</h3>
+    <p>所有把状态存在 <code>messages</code> 里的 Agent，最终都会遇到同一个问题：它必须从一段不断变长的流水账里，重新推理出「我现在知道什么」。这件事人做都费劲，模型做更是每次结果不同。</p>
+    <p>解法是把记忆分层。下面这四级，是我在四套系统里收敛出来的结构，几乎可以照抄：</p>
+
+    <div class="figure">
+      <div class="fig-box">
+        <svg viewBox="0 0 720 330" role="img" aria-label="四级存储结构：工作集、便签、事实、日志">
+          <defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#2a6570"/></marker></defs>
+          <text x="24" y="22" font-family="monospace" font-size="9.5" letter-spacing="1.6" fill="#666b73">每轮动态装配</text>
+          <rect x="24" y="34" width="672" height="118" rx="8" fill="#dfeef0" stroke="#2a6570" stroke-width="1.4"/>
+          <g font-family="monospace" font-size="8.6">
+            <rect x="40" y="50" width="118" height="86" rx="5" fill="#fffdf6" stroke="#7aa9ae"/>
+            <text x="99" y="70" text-anchor="middle" fill="#2a6570">L0 · WORKING</text>
+            <text x="99" y="86" text-anchor="middle" fill="#666b73">当前步骤必需</text>
+            <text x="99" y="101" text-anchor="middle" fill="#666b73">目标 / 当前文件</text>
+            <text x="99" y="116" text-anchor="middle" fill="#a2612a">≤ 20% 窗口</text>
+
+            <rect x="174" y="50" width="118" height="86" rx="5" fill="#fffdf6" stroke="#7aa9ae"/>
+            <text x="233" y="70" text-anchor="middle" fill="#2a6570">L1 · SCRATCH</text>
+            <text x="233" y="86" text-anchor="middle" fill="#666b73">模型可写的结构化便签</text>
+            <text x="233" y="101" text-anchor="middle" fill="#666b73">定期压缩、去重</text>
+            <text x="233" y="116" text-anchor="middle" fill="#a2612a">≤ 15% 窗口</text>
+
+            <rect x="308" y="50" width="118" height="86" rx="5" fill="#fffdf6" stroke="#7aa9ae"/>
+            <text x="367" y="70" text-anchor="middle" fill="#2a6570">L2 · FACTS</text>
+            <text x="367" y="86" text-anchor="middle" fill="#666b73">键值事实，带来源</text>
+            <text x="367" y="101" text-anchor="middle" fill="#666b73">按需注入，不常驻</text>
+            <text x="367" y="116" text-anchor="middle" fill="#a2612a">无固定上限</text>
+
+            <rect x="442" y="50" width="118" height="86" rx="5" fill="#fffdf6" stroke="#bfb8a8"/>
+            <text x="501" y="70" text-anchor="middle" fill="#666b73">L3 · JOURNAL</text>
+            <text x="501" y="86" text-anchor="middle" fill="#666b73">完整事件流</text>
+            <text x="501" y="101" text-anchor="middle" fill="#666b73">不进上下文</text>
+            <text x="501" y="116" text-anchor="middle" fill="#a33a27">仅回放/检索</text>
+
+            <rect x="576" y="50" width="104" height="86" rx="5" fill="#f4e6d8" stroke="#d9c0a5"/>
+            <text x="628" y="70" text-anchor="middle" fill="#7a4a1c">ASSEMBLER</text>
+            <text x="628" y="86" text-anchor="middle" fill="#9a7a58">按预算拼装</text>
+            <text x="628" y="101" text-anchor="middle" fill="#9a7a58">超预算先裁 L1</text>
+            <text x="628" y="116" text-anchor="middle" fill="#9a7a58">再裁 L2 未引用</text>
+          </g>
+          <g stroke="#2a6570" fill="none" stroke-width="1.3" marker-end="url(#a4)">
+            <path d="M158 93 H170"/><path d="M292 93 H304"/><path d="M426 93 H438"/><path d="M560 93 H572"/>
+          </g>
+          <text x="24" y="182" font-family="monospace" font-size="9.5" letter-spacing="1.6" fill="#666b73">持久层（磁盘）</text>
+          <rect x="24" y="194" width="672" height="56" fill="#efece2" stroke="#cfc7b6"/>
+          <text x="44" y="218" font-family="monospace" font-size="9" fill="#5a5f66">journal.jsonl — append-only，每步一条，含输入哈希、输出、耗时、成本</text>
+          <text x="44" y="236" font-family="monospace" font-size="9" fill="#5a5f66">facts.sqlite — 事实与来源；snapshots/ — 每 N 步一份可恢复状态</text>
+          <text x="24" y="282" font-family="monospace" font-size="9" fill="#666b73">关键原则：L0–L2 是视图，L3 是真相。视图可以丢，真相不能丢。</text>
+          <text x="24" y="302" font-family="monospace" font-size="9" fill="#666b73">任何时候都能从 L3 重建 L0–L2，反向不成立。</text>
+        </svg>
+      </div>
+      <figcaption><b>图 3-1</b>四级存储：上面三层是模型这一轮能看到的，最下面那层是它永远不该看到的。<small>diagram · SVG</small></figcaption>
+    </div>
+
+    <p>这个结构最重要的性质是<strong>可重建</strong>：给定 journal，你可以重新装配出任何一轮的上下文。于是「它当时为什么这么想」变成一个可以复盘的问题，而不是玄学。</p>
+
+    <h3><span class="n">3.3</span>预算怎么分：一张施工图</h3>
+    <p>假设窗口 128K，输出预留 8K，可用 120K。我的默认分配如下，你可以按任务调整，但每一项的<em>存在</em>比数字更重要：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>区域</th><th>占比</th><th>内容</th><th>超了怎么办</th></tr></thead>
+        <tbody>
+          <tr><td>固定前缀</td><td class="num">8%</td><td>系统提示 + 角色 + 硬约束</td><td>不许超。超了说明提示词该重构</td></tr>
+          <tr><td>工具定义</td><td class="num">12%</td><td>工具 schema</td><td>削减工具数量，不是削减描述</td></tr>
+          <tr><td>当前任务</td><td class="num">10%</td><td>目标、验收标准、当前步骤</td><td>不许超</td></tr>
+          <tr><td>工作集</td><td class="num">25%</td><td>相关文件片段、上一步输出</td><td>检索替换，不做全量</td></tr>
+          <tr><td>历史与便签</td><td class="num">30%</td><td>压缩后的进展、失败记录</td><td>先压缩，再丢最早的低价值项</td></tr>
+          <tr><td>输出预留</td><td class="num">15%</td><td>模型生成本轮回答</td><td>不许动</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>这张表真正的作用不是分配，而是<strong>让你在装配上下文时必须做减法</strong>。没有预算约束的装配器，最后一定会变成「全都塞进去」；有了预算，你才会被迫回答「这一段到底值不值它的 token」。</p>
+
+    <div class="rig" id="rig-context">
+      <div class="rig-head">
+        <p class="rig-tag">SAMPLE 02 / CONTEXT DECAY</p>
+        <div class="legend">
+          <span><i style="background:#7aa9ae"></i>目标</span>
+          <span><i style="background:#c8b89a"></i>工具</span>
+          <span><i style="background:#5b8f98"></i>工作集</span>
+          <span><i style="background:#a33a27"></i>噪声</span>
+        </div>
+      </div>
+      <p class="rig-title">拖到第 15 轮，看上下文怎么从「资料」变成「垃圾场」</p>
+      <div class="rig-stage">
+        <div id="ctx-bars" aria-live="polite"></div>
+        <div id="ctx-readout"></div>
+      </div>
+      <div class="rig-ctrl">
+        <div class="ctrl"><label for="ctx-round">轮次</label><input id="ctx-round" type="range" min="1" max="18" value="6" step="1"/><output id="ctx-round-out">6</output></div>
+        <button class="rig-btn on" id="ctx-prune" type="button" aria-pressed="true">阶梯压缩：开</button>
+      </div>
+      <p class="rig-cap" id="ctx-cap">装配策略：每 3 轮把历史压成结构化便签，工具输出只保留结论与证据指针。</p>
+    </div>
+
+    <p>小样里的数字是模型，不是实测：一轮工具调用的原始返回按 1100 token 记，其中真正有用的结论大约 120 token。这个比例（<strong>约 1:9</strong>）在我见过的系统里相当普遍——日志、JSON、HTML、测试输出，都是这个量级。也就是说，不做裁剪的话，你 90% 的上下文预算在买噪声。</p>
+
+    <h3><span class="n">3.4</span>压缩的三种做法，和它们各自的坑</h3>
+    <ul>
+      <li><strong>丢尾</strong>：只保留最近 N 轮。最快，也最危险——它会把「第 2 轮发现的关键约束」扔掉，而模型不知道自己不知道。</li>
+      <li><strong>摘要</strong>：让模型把历史压成一段话。可行，但摘要会丢细节，而且每次摘要都是一次有损再编码，压三轮之后基本只剩套话。我的做法是<strong>只压过程、不压事实</strong>：事实进 L2，过程进摘要。</li>
+      <li><strong>检索</strong>：把历史切块存起来，按当前步骤检索。质量取决于切块与索引，工程量大，但在超长任务里是唯一能 scale 的做法。</li>
+    </ul>
+    <p>还有一个几乎没人提但极其有效的技巧：<strong>让模型自己维护便签</strong>。在每轮结束时要求它输出一个固定 schema 的 <code>scratch</code> 块（已知事实、待办、已排除的假设），内核把它结构化存起来，下一轮重新注入。这相当于把「记忆」从隐式的注意力，变成显式的数据结构——模型不需要「记得」，它只需要「读」。</p>
+
+    <h3><span class="n">3.5</span>反直觉结论：稳定比大更重要</h3>
+    <p>如果你的上下文每轮都在变，前缀缓存全部失效，成本翻倍，延迟翻倍，而且模型面对的是一个每次都不同的世界。反过来，把系统提示、工具定义、输出格式固定住，只让「工作集」变化，你会发现两件事：成本降了，行为也稳了。</p>
+    <p>原因不难理解：<strong>模型的行为由它看到的模式决定</strong>。一个稳定的前缀是一个稳定的模式，一个每轮重排的上下文是一个每轮都要重新适应的环境。前者像给员工一份固定的岗位说明书，后者像每天早上换一个老板。</p>
+
+    <h3><span class="n">3.6</span>装配器：一段可以照抄的骨架</h3>
+    <p>说了这么多原则，落地就是几十行代码。装配器是内核里唯一「每次都要跑」的模块，它决定了模型这一轮看到的世界。我把它写成四步：定清单、排序、装填、收尾。</p>
+
+    <div class="code">
+      <div class="code-head"><b>assembler.ts</b><span>四步装配，预算硬上限</span></div>
+      <pre><code><span class="k">function</span> <span class="f">assemble</span>(state: TaskState, budget: <span class="k">number</span>): Message[] {
+  <span class="c">// 1. 定清单：这一轮到底需要哪些信息？</span>
+  <span class="k">const</span> wanted: Segment[] = [
+    { k: <span class="s">"system"</span>,   v: SYSTEM_PROMPT,                  pin: <span class="k">true</span>  },
+    { k: <span class="s">"tools"</span>,    v: <span class="f">toolsFor</span>(state.phase),            pin: <span class="k">true</span>  },
+    { k: <span class="s">"goal"</span>,     v: state.goal,                     pin: <span class="k">true</span>  },
+    { k: <span class="s">"plan"</span>,     v: <span class="f">currentStep</span>(state),             pin: <span class="k">true</span>  },
+    { k: <span class="s">"facts"</span>,    v: <span class="f">factsCitedBy</span>(state.phase),        pin: <span class="k">false</span> },
+    { k: <span class="s">"scratch"</span>,  v: state.scratch,                  pin: <span class="k">false</span> },
+    { k: <span class="s">"work"</span>,     v: <span class="f">workingSet</span>(state, budget * <span class="n">0.25</span>), pin: <span class="k">false</span> },
+    { k: <span class="s">"history"</span>,  v: state.compressedHistory,        pin: <span class="k">false</span> }
+  ];
+
+  <span class="c">// 2. 排序：pin 在前（命中前缀缓存），其余按信息密度降序</span>
+  <span class="k">const</span> ordered = [
+    ...wanted.<span class="f">filter</span>(s =&gt; s.pin),
+    ...wanted.<span class="f">filter</span>(s =&gt; !s.pin).<span class="f">sort</span>((a, b) =&gt; <span class="f">density</span>(b) - <span class="f">density</span>(a))
+  ];
+
+  <span class="c">// 3. 装填：从高密度到低密度，装不下就丢；pin 装不下直接报错</span>
+  <span class="k">let</span> used = 0;
+  <span class="k">const</span> kept: Segment[] = [];
+  <span class="k">for</span> (<span class="k">const</span> s <span class="k">of</span> ordered) {
+    <span class="k">const</span> cost = <span class="f">tokens</span>(s.v);
+    <span class="k">if</span> (used + cost &gt; budget) {
+      <span class="k">if</span> (s.pin) <span class="k">throw new</span> Error(<span class="s">`pinned segment ${s.k} exceeds budget`</span>);
+      <span class="k">continue</span>;                                  <span class="c">// 丢掉，但记一笔</span>
+    }
+    kept.<span class="f">push</span>(s); used += cost;
+  }
+
+  <span class="c">// 4. 收尾：把被丢掉的东西写进日志，这是复盘时最有用的信息</span>
+  <span class="f">journalDropped</span>(state, ordered.<span class="f">filter</span>(s =&gt; !kept.<span class="f">includes</span>(s)));
+  <span class="k">return</span> <span class="f">render</span>(kept);
+}</code></pre>
+    </div>
+
+    <p>这段代码里有两个设计决定，值得单独说：</p>
+    <ul>
+      <li><strong>pin 与排序分离</strong>：pin 的东西不仅不能被丢，还要放在最前面。这不是为了好看，是为了让前缀缓存命中——前缀缓存只认完全相同的前缀，哪怕你在开头插入一个空格，缓存就废了。</li>
+      <li><strong>记录「丢了什么」</strong>：这一步看起来多余，但它是排障的关键。当模型莫名其妙忽略某条约束时，你打开日志就能看到：那条约束这一轮根本没进上下文。没有这个记录，你会花两小时怀疑模型，最后发现是自己的装配器。</li>
+    </ul>
+    <p><code>density()</code> 怎么算？我的做法很土：<code>(新信息量 × 引用次数) / token 数</code>。新信息量用「与已有事实的重叠度」近似，重叠度高就低。这个方法不精确，但它逼你把「这一段到底值多少」变成一个问题——而大多数装配器连这个问题都不问。</p>
+
+    <div class="pull">
+      上下文不是仓库，是工作台。你不会因为工作台大，就把整个仓库倒在上面。
+      <cite>— 关于 context window 的一句老实话</cite>
+    </div>
+  </div>
+</section>
+<section class="chapter" id="ch4">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M14 8l-6 16 6 16" stroke="#2a6570" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M34 8l6 16-6 16" stroke="#2a6570" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M27 10l-6 28" stroke="#a2612a" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+      <span>04</span>
+    </div>
+    <div>
+      <p class="chapter-label">TOOL SEMANTICS</p>
+      <h2>工具即界面：五十个 API 不如一把螺丝刀</h2>
+      <p>工具不是能力清单，是模型和世界之间的那层用户界面。界面设计得好，笨模型也能干活；设计得烂，再强的模型也会点错按钮。</p>
+      <span class="chapter-stamp">造物手记 · 04 / 06</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>先说一个数字。一个中等复杂度的工具定义，名字、描述、参数 schema、枚举值、示例，加起来大约 200 到 400 token。五十个工具，就是 1 万到 2 万 token 的<em>常驻</em>开销——每一轮都要付，哪怕这一轮只用了一个。这还只是钱的问题。</p>
+    <p>更贵的是认知成本。工具越多，描述之间的语义重叠越多，模型选错的概率越高。你会发现它开始调用 <code>search_files</code> 去读一个已知路径，或者用 <code>run_command</code> 去做一件 <code>edit_file</code> 该做的事。这不是模型变笨了，是你给它做了一份有五十个相似按钮的控制面板。</p>
+
+    <h3><span class="n">4.1</span>正交，而不是齐全</h3>
+    <p>2024 年之后，几个最强的编码 Agent 陆续收敛到了同一个极简工具集：读文件、写文件、改文件、跑命令。四个工具，覆盖了绝大部分编程任务。这件事值得琢磨：为什么不是五十个专用工具更准？</p>
+    <p>因为<strong>组合爆炸由语言能力承担，比由 API 数量承担便宜得多</strong>。「找出所有引用了旧接口的文件，批量替换，然后跑测试」——用四个原子工具，模型用一句话就能编排；如果用五十个专用工具，你得先有 <code>find_references</code>、<code>batch_replace</code>、<code>run_tests</code>、<code>parse_test_output</code>……每一个都要定义、要维护、要占用上下文，而且它们之间的组合仍然要模型来想。</p>
+
+    <figure class="art" style="margin:34px 0">
+      <div class="art-frame">
+        <img src="assets/art/fig-toolbox.webp" alt="一张插图：打开的工具箱里只放了四把常用工具，箱盖内侧与四周布满五十个被擦掉的专用工具虚影" loading="lazy"/>
+      </div>
+      <figcaption><b>图 4-0</b>工具箱的正确形状：留四把常用的，把五十个专用工具的虚影擦掉。它们不是没用，是还没到该被造出来的时候。<small>illustration · GPT 系图像模型</small></figcaption>
+    </figure>
+
+    <div class="figure">
+      <div class="fig-box">
+        <svg viewBox="0 0 720 250" role="img" aria-label="工具设计对比：专用工具与原子工具">
+          <text x="24" y="22" font-family="monospace" font-size="9.5" letter-spacing="1.4" fill="#a33a27">50 MICRO-APIS</text>
+          <g fill="#fffdf6" stroke="#d6b3a6" stroke-width="1.2">
+            <rect x="24" y="36" width="52" height="26" rx="4"/><rect x="84" y="36" width="52" height="26" rx="4"/>
+            <rect x="144" y="36" width="52" height="26" rx="4"/><rect x="204" y="36" width="52" height="26" rx="4"/>
+            <rect x="24" y="70" width="52" height="26" rx="4"/><rect x="84" y="70" width="52" height="26" rx="4"/>
+            <rect x="144" y="70" width="52" height="26" rx="4"/><rect x="204" y="70" width="52" height="26" rx="4"/>
+            <rect x="24" y="104" width="52" height="26" rx="4"/><rect x="84" y="104" width="52" height="26" rx="4"/>
+            <rect x="144" y="104" width="52" height="26" rx="4"/><rect x="204" y="104" width="52" height="26" rx="4"/>
+            <rect x="24" y="138" width="52" height="26" rx="4"/><rect x="84" y="138" width="52" height="26" rx="4"/>
+            <rect x="144" y="138" width="52" height="26" rx="4"/><rect x="204" y="138" width="52" height="26" rx="4"/>
+          </g>
+          <text x="140" y="182" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#a33a27">每格 = 一个 schema · 语义互相重叠</text>
+          <text x="140" y="200" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#666b73">常驻 10–20K token · 选择准确率随数量下降</text>
+
+          <text x="330" y="22" font-family="monospace" font-size="9.5" letter-spacing="1.4" fill="#2a6570">4 ORTHOGONAL PRIMITIVES</text>
+          <g fill="#dfeef0" stroke="#2a6570" stroke-width="1.4">
+            <rect x="330" y="40" width="80" height="46" rx="5"/><rect x="422" y="40" width="80" height="46" rx="5"/>
+            <rect x="330" y="100" width="80" height="46" rx="5"/><rect x="422" y="100" width="80" height="46" rx="5"/>
+          </g>
+          <g font-family="monospace" font-size="10" text-anchor="middle" fill="#1c1f23">
+            <text x="370" y="68">READ</text><text x="462" y="68">EDIT</text>
+            <text x="370" y="128">WRITE</text><text x="462" y="128">BASH</text>
+          </g>
+          <g stroke="#a2612a" stroke-width="1.2" fill="none" opacity=".85">
+            <path d="M410 63 L418 63"/><path d="M462 86 V96"/><path d="M410 123 L418 123"/><path d="M370 86 V96"/>
+            <path d="M502 63 q40 30 0 60" stroke-dasharray="3 3"/>
+          </g>
+          <text x="548" y="70" font-family="monospace" font-size="8.5" fill="#7a4a1c">组合由模型</text>
+          <text x="548" y="84" font-family="monospace" font-size="8.5" fill="#7a4a1c">用语言完成</text>
+          <text x="548" y="104" font-family="monospace" font-size="8.5" fill="#7a4a1c">不需要新 API</text>
+          <text x="420" y="182" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#2a6570">4 个 schema · 约 1.2K token</text>
+          <text x="420" y="200" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#666b73">组合空间 = ∞，维护成本 = 4</text>
+          <line x1="300" y1="30" x2="300" y2="215" stroke="#e0dacb"/>
+        </svg>
+      </div>
+      <figcaption><b>图 4-1</b>工具设计的两种哲学。左边用 API 数量穷举能力，右边用原语数量换组合自由度。<small>diagram · SVG</small></figcaption>
+    </div>
+
+    <p>当然，正交不是万能药。当某个操作<em>高频、复杂、且错误代价极高</em>时，专用工具是对的。比如「部署」：你用 bash 拼十条命令也能做，但一旦拼错就是生产事故，这时候一个带前置检查、带回滚、带审计的 <code>deploy</code> 工具，比给模型自由发挥好一万倍。<strong>正交负责覆盖长尾，专用负责守住要害。</strong></p>
+
+    <h3><span class="n">4.2</span>返回值是给模型的 UI</h3>
+    <p>这一节是我认为整篇文章最容易被低估的部分。绝大多数人设计工具时，只关心「输入怎么传」，不关心「输出怎么给」。但模型看到的世界，就是工具返回的那段文本。你返回什么，它就以为什么。</p>
+    <p>看两个版本的同一次失败：</p>
+
+    <div class="code">
+      <div class="code-head"><b>bad-return.txt</b><span>把日志原样倒给模型</span></div>
+      <pre><code>npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! app@1.4.2 test: `jest --ci`
+npm ERR! Exit status 1
+npm ERR!
+npm ERR! Failed at the app@1.4.2 test script.
+...  (此处省略 180 行 stack trace)  ...
+FAIL src/utils/parse.test.ts
+  ● parseDuration › handles negative input
+    expect(received).toBe(expected)
+    Expected: -1000
+    Received: 1000</code></pre>
+    </div>
+
+    <div class="code">
+      <div class="code-head"><b>good-return.json</b><span>结论 + 证据指针 + 建议</span></div>
+      <pre><code>{
+  <span class="s">"status"</span>: <span class="s">"failed"</span>,
+  <span class="s">"summary"</span>: <span class="s">"1 test failed: parseDuration rejects negative input"</span>,
+  <span class="s">"failure"</span>: {
+    <span class="s">"file"</span>: <span class="s">"src/utils/parse.test.ts"</span>,
+    <span class="s">"case"</span>: <span class="s">"handles negative input"</span>,
+    <span class="s">"expected"</span>: <span class="n">-1000</span>, <span class="s">"received"</span>: <span class="n">1000</span>
+  },
+  <span class="s">"evidence"</span>: <span class="s">"artifacts/test-2026-10-20.log:412-438"</span>,
+  <span class="s">"next"</span>: <span class="s">"parseDuration 未处理负号；检查 src/utils/parse.ts:22"</span>
+}</code></pre>
+    </div>
+
+    <p>第二个版本的信息量并没有减少——完整日志还在 <code>evidence</code> 指向的文件里，模型需要时可以再读。但它把「读 180 行才能得到的结论」变成了「一行就能拿到的结论」。这一个改动，在我系统里把测试修复的平均轮次从 4.2 降到了 1.9。</p>
+    <p>设计返回值时，我遵守三条规则：</p>
+    <ul>
+      <li><strong>结论先行</strong>：第一个字段永远是状态或结论，不是细节。</li>
+      <li><strong>证据可寻址</strong>：细节不删，但变成指针（文件 + 行号、URL、记录 ID）。模型有手，让它自己去拿。</li>
+      <li><strong>给下一步</strong>：<code>next</code> 字段不是命令，是提示。它显著降低模型在失败后乱试的概率。</li>
+    </ul>
+
+    <h3><span class="n">4.3</span>错误信息是产品文案</h3>
+    <p>「Error: ENOENT」对人是噪音，对模型是谜语。它不知道是哪个文件、为什么找不到、有哪些替代。于是它开始猜，猜错，再猜。</p>
+    <p>一个好的工具错误应该包含四件事：<strong>发生了什么、为什么、有哪些合法选项、建议怎么做</strong>。比如：</p>
+
+    <div class="code">
+      <div class="code-head"><b>error-design.txt</b><span>错误信息是给模型的文案</span></div>
+      <pre><code><span class="c">// 差</span>
+Error: file not found
+
+<span class="c">// 好</span>
+{
+  <span class="s">"status"</span>: <span class="s">"error"</span>,
+  <span class="s">"code"</span>: <span class="s">"FILE_NOT_FOUND"</span>,
+  <span class="s">"message"</span>: <span class="s">"src/config.ts 不存在"</span>,
+  <span class="s">"candidates"</span>: [<span class="s">"src/config/index.ts"</span>, <span class="s">"src/config.default.ts"</span>],
+  <span class="s">"hint"</span>: <span class="s">"路径可能缺少 /index；或先调用 list_dir('src') 确认结构"</span>,
+  <span class="s">"retryable"</span>: <span class="k">true</span>
+}</code></pre>
+    </div>
+    <p><code>candidates</code> 这个字段尤其值钱。它把「猜」变成了「选」，而选择的准确率远高于凭空生成。这本质上是在给模型做<em>受限补全</em>——和 IDE 的自动补全是同一个思路。</p>
+
+    <h3><span class="n">4.4</span>可反悔性：写操作要分三级</h3>
+    <p>读操作可以放开，写操作必须分级。我的默认分级是：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>级别</th><th>范围</th><th>约束</th><th>审批</th></tr></thead>
+        <tbody>
+          <tr><td>沙盒写</td><td>临时目录、草稿区</td><td>随便写，可整体丢弃</td><td>不需要</td></tr>
+          <tr><td>工作区写</td><td>项目文件</td><td>先 diff 后落盘；保留原文件；可一键还原</td><td>不需要（但全部留痕）</td></tr>
+          <tr><td>不可逆操作</td><td>发版、删数据、对外发送、花钱</td><td>幂等键 + 前置快照 + 二次确认</td><td>必须人审</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>关键不是「限制模型」，而是<strong>让错误变得便宜</strong>。一个可以一键还原的系统，允许模型大胆试错；一个删了就没的系统，你只能把它关进笼子。可反悔性直接决定了你能给 Agent 多少自由度。</p>
+
+    <div class="note">
+      <span class="tag">KERNEL NOTE / 04</span>
+      <b>工具契约应该声明副作用。</b>我在每个工具的定义里强制三个字段：<code>sideEffect: "none" | "local" | "external"</code>、<code>idempotent: boolean</code>、<code>cost: "free" | "metered"</code>。内核据此决定重试策略与审批级别——而不是让模型在提示词里「注意不要重复发送」。
+    </div>
+
+    <h3><span class="n">4.5</span>一个工具定义应该长什么样</h3>
+    <p>把所有东西合起来，一个生产级工具定义大致是下面这样。注意它比 OpenAI 的 function schema 多了四个字段，而这四个字段恰恰是可靠性的来源：</p>
+
+    <div class="code">
+      <div class="code-head"><b>tool-spec.ts</b><span>契约比描述重要</span></div>
+      <pre><code><span class="k">interface</span> ToolSpec&lt;I, O&gt; {
+  name: <span class="k">string</span>;
+  description: <span class="k">string</span>;          <span class="c">// 写「什么时候该用」，不是「它做什么」</span>
+  input: Schema&lt;I&gt;;
+  output: Schema&lt;O&gt;;
+  sideEffect: <span class="s">"none"</span> | <span class="s">"local"</span> | <span class="s">"external"</span>;
+  idempotent: <span class="k">boolean</span>;
+  timeoutMs: <span class="k">number</span>;
+  <span class="c">// 内核侧：不需要模型知道，但决定了它能不能被安全地重试</span>
+  <span class="f">preconditions</span>(state: TaskState): GuardResult;
+  <span class="f">classify</span>(err: unknown): <span class="s">"transient"</span> | <span class="s">"param"</span> | <span class="s">"semantic"</span>;
+  <span class="f">trim</span>(raw: <span class="k">unknown</span>): { summary: <span class="k">string</span>; evidence: <span class="k">string</span>; next?: <span class="k">string</span> };
+}</code></pre>
+    </div>
+
+    <p>那个 <code>description</code> 的写法值得单独强调。大多数人写「读取文件内容」，这描述的是功能；应该写「当你知道确切路径、需要查看内容时使用；路径不确定时先用 list_dir」。<strong>工具描述不是文档，是决策依据。</strong>它要回答的不是「这是什么」，而是「什么时候该选我、什么时候别选我」。</p>
+
+    <h3><span class="n">4.6</span>并行、批处理与「一次调用做一件事」的例外</h3>
+    <p>正交工具的一个副作用是：一次任务往往需要连续调用很多次。读十个文件、改五处、跑三次测试。如果每次都单独一轮，你的墙钟时间会变成「轮数 × 单轮延迟」，而单轮延迟通常是 3 到 20 秒。十个文件就是三分钟，只为了读。</p>
+    <p>所以有两个必要的例外：</p>
+    <ul>
+      <li><strong>并行只读</strong>：同一阶段内的读操作可以并发发出，结果按调用 ID 回收。注意只对 <code>sideEffect: "none"</code> 的工具开这个口子——并发写会让重放和回滚都失去意义。</li>
+      <li><strong>批处理原语</strong>：与其给模型十个专用工具，不如给一个接受数组的原子工具。<code>read_file(paths: string[])</code> 比 <code>read_file</code> × 10 好，理由和前面一样：一个 schema 覆盖无量组合。</li>
+    </ul>
+    <p>但批处理有个陷阱：<strong>部分失败怎么办</strong>。十个文件里三个不存在，是整体失败还是部分成功？我的默认是「部分成功 + 结构化报告」：成功的照常返回，失败的列在 <code>errors</code> 里，每条带 <code>candidates</code>。让模型自己决定要不要补那三个，而不是让它重试整个批次——后者会把已经读到的九个文件重新读一遍，浪费九倍的上下文。</p>
+
+    <div class="note">
+      <span class="tag">KERNEL NOTE / 04-2</span>
+      <b>批处理是原子性的敌人。</b>一个批次要么全部成功、要么部分成功，二选一必须写进契约。最糟的设计是「有时全成功、有时部分成功、看情况」——模型无法从返回里推断出发生了什么，于是它会猜。
+    </div>
+  </div>
+</section>
+<section class="chapter" id="ch5">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <circle cx="24" cy="11" r="5.4" stroke="#a2612a" stroke-width="2"/>
+        <circle cx="9" cy="36" r="4.6" stroke="#2a6570" stroke-width="2"/>
+        <circle cx="39" cy="36" r="4.6" stroke="#2a6570" stroke-width="2"/>
+        <path d="M21 15.5L12 31M27 15.5L36 31" stroke="#666b73" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M14 36h20" stroke="#2a6570" stroke-width="1.8" stroke-dasharray="3 3"/>
+      </svg>
+      <span>05</span>
+    </div>
+    <div>
+      <p class="chapter-label">TOPOLOGY</p>
+      <h2>多智能体的迷思：群聊不是架构</h2>
+      <p>把五个 Agent 拉进一个群，它们会热烈讨论、互相赞同、最后集体跑偏——而且在账单上留下一条漂亮的指数曲线。</p>
+      <span class="chapter-stamp">造物手记 · 05 / 06</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>2023 年最流行的 Agent 演示，是一群各有头衔的模型坐在一张桌子旁开会。产品经理提需求，架构师画图，程序员写码，测试员挑错，最后交付。看的时候觉得很科幻，自己搭一遍会发现：它们大部分时间在互相复述，很少在解决问题。</p>
+    <p>这不是 prompt 没写好。这是一个信息论问题。</p>
+
+    <h3><span class="n">5.1</span>群聊的三个数学问题</h3>
+    <p>假设 N 个 Agent，每轮每个 Agent 都能看到所有人的发言。第 r 轮结束时，群里累计消息量大致是 <code>O(N² · r)</code>，而每个 Agent 要读的上下文是 <code>O(N · r)</code>。N=5、r=4 时，总消息 80 条，每个 Agent 每轮要读 20 条别人的推理过程——其中大部分与它的任务无关。</p>
+    <p>三个后果依次发生：</p>
+    <ol>
+      <li><strong>成本爆炸</strong>：token 消耗随 N² 增长，而有效信息量增长得慢得多。你付的是平方的钱，买的是线性的进展。</li>
+      <li><strong>上下文互相污染</strong>：测试员看到程序员的「我觉得这样应该没问题」，会倾向于放过问题；程序员看到产品经理的「先跑通再说」，会降低实现标准。每个 Agent 的上下文里都混进了别人的假设，而这些假设没有被标记为「未经验证」。</li>
+      <li><strong>责任不可归因</strong>：出了问题，你无法回答「是谁在第五轮决定了这个方案」。因为没有一个人决定，是「大家讨论出来的」。这在工程上是灾难，因为它让复盘和修复都失去对象。</li>
+    </ol>
+
+    <div class="note warn">
+      <span class="tag">INCIDENT / 群聊塌缩</span>
+      <b>共识不等于正确。</b>多个模型在同一条上下文里讨论，会迅速收敛到「彼此都同意」的表述，而不是「证据支持」的结论。这个现象有个名字叫 sycophancy，在群聊结构里会被放大：每个 Agent 都在读别人的语气，于是语气变成了事实。
+    </div>
+
+    <h3><span class="n">5.2</span>两种真正有效的拓扑</h3>
+    <p>如果你确实需要多个执行者（下一节讲什么时候需要），只有两种结构经得起生产考验：</p>
+
+    <div class="figure">
+      <div class="fig-box">
+        <svg viewBox="0 0 720 280" role="img" aria-label="两种有效拓扑：主管-工人 与 扇出-汇聚">
+          <text x="24" y="22" font-family="monospace" font-size="9.5" letter-spacing="1.4" fill="#2a6570">A · SUPERVISOR / WORKER</text>
+          <g stroke="#2a6570" stroke-width="1.4" fill="none">
+            <rect x="120" y="40" width="120" height="40" rx="6" fill="#f4e6d8"/>
+            <rect x="30" y="130" width="96" height="34" rx="5" fill="#dfeef0"/>
+            <rect x="136" y="130" width="96" height="34" rx="5" fill="#dfeef0"/>
+            <rect x="242" y="130" width="96" height="34" rx="5" fill="#dfeef0"/>
+            <path d="M150 80 L78 126"/><path d="M180 80 V126"/><path d="M210 80 L270 126"/>
+            <path d="M78 168 q40 30 102 20" stroke-dasharray="3 3"/>
+            <path d="M270 168 q-40 30 -102 20" stroke-dasharray="3 3"/>
+          </g>
+          <text x="180" y="65" font-family="monospace" font-size="9" text-anchor="middle" fill="#7a4a1c">SUPERVISOR</text>
+          <text x="78" y="152" font-family="monospace" font-size="8.5" text-anchor="middle">worker</text>
+          <text x="184" y="152" font-family="monospace" font-size="8.5" text-anchor="middle">worker</text>
+          <text x="290" y="152" font-family="monospace" font-size="8.5" text-anchor="middle">worker</text>
+          <text x="180" y="205" font-family="monospace" font-size="8" text-anchor="middle" fill="#666b73">回传只有结构化结果，不含内心戏</text>
+
+          <text x="390" y="22" font-family="monospace" font-size="9.5" letter-spacing="1.4" fill="#a2612a">B · FAN-OUT / FAN-IN</text>
+          <g stroke="#a2612a" stroke-width="1.4" fill="none">
+            <rect x="470" y="40" width="120" height="30" rx="5" fill="#f4e6d8"/>
+            <rect x="406" y="118" width="70" height="30" rx="5" fill="#dfeef0"/>
+            <rect x="494" y="118" width="70" height="30" rx="5" fill="#dfeef0"/>
+            <rect x="582" y="118" width="70" height="30" rx="5" fill="#dfeef0"/>
+            <path d="M500 70 L441 114"/><path d="M530 70 V114"/><path d="M560 70 L617 114"/>
+            <rect x="470" y="196" width="120" height="30" rx="5" fill="#dfeef0"/>
+            <path d="M441 148 L500 192"/><path d="M529 148 V192"/><path d="M617 148 L560 192"/>
+          </g>
+          <text x="530" y="60" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#9a7a58">DISPATCHER</text>
+          <text x="441" y="137" font-family="monospace" font-size="8" text-anchor="middle">task 1</text>
+          <text x="529" y="137" font-family="monospace" font-size="8" text-anchor="middle">task 2</text>
+          <text x="617" y="137" font-family="monospace" font-size="8" text-anchor="middle">task 3</text>
+          <text x="530" y="215" font-family="monospace" font-size="8.5" text-anchor="middle" fill="#7a4a1c">MERGE</text>
+          <text x="530" y="252" font-family="monospace" font-size="8" text-anchor="middle" fill="#666b73">无共享上下文 · 可并行 · 结果可校验</text>
+        </svg>
+      </div>
+      <figcaption><b>图 5-1</b>两种工业拓扑。共同点：消息只沿一条明确的路径流动，且每一次传递都带类型。<small>diagram · SVG</small></figcaption>
+    </div>
+
+    <p>A 是层级：主管拆任务、派活、汇总。B 是扇出：把一个任务复制成 N 份独立的子任务，并行跑，最后合并。前者适合有依赖的任务，后者适合可切分的任务（审 40 个文件、查 10 个数据源、写 8 个章节）。</p>
+
+    <figure class="art" style="margin:34px 0">
+      <div class="art-frame">
+        <img src="assets/art/fig-dispatcher.webp" alt="一张插图：黄铜调度员站在高台上，把封好的信封经三根玻璃管道送进三间彼此隔开的小隔间，每个隔间里的人在独立工作，只有一条窄滑梯把回执送回" loading="lazy"/>
+      </div>
+      <figcaption><b>图 5-0</b>分层委托的正确长相：发出去的是封好的任务，收回来的是一张回执；隔间之间没有走廊。<small>illustration · GPT 系图像模型</small></figcaption>
+    </figure>
+    <p>两者都不允许 worker 之间自由对话。这不是为了省钱，是为了<strong>保持每个 worker 的上下文干净</strong>——而这恰恰是多 Agent 唯一真正的技术优势。</p>
+
+    <h3><span class="n">5.3</span>什么时候真的需要多 Agent</h3>
+    <p>我的判断标准只有三条，满足任意一条才考虑拆：</p>
+    <ul>
+      <li><strong>上下文隔离</strong>：子任务的上下文会污染主任务（比如审一份 3000 行代码，不需要把它塞进主线程）。</li>
+      <li><strong>并行收益</strong>：子任务之间无依赖，墙钟时间能真的缩短。</li>
+      <li><strong>权限分离</strong>：子任务需要不同的工具权限（比如只读的审查者、可写的执行者），靠结构而不是提示词隔离。</li>
+    </ul>
+    <p>三条都不满足的多 Agent 设计，基本都是在给单 Agent 增加通信开销。我见过最奢侈的浪费，是一个三人小组：研究员查资料、写手写文章、编辑润色——而三个人的上下文里都有同一份资料，因为研究员把原文贴进了消息里。</p>
+
+    <h3><span class="n">5.4</span>类型化委托：子任务是一份契约</h3>
+    <p>「你去帮我看看这个模块有没有问题」是自然语言，不是委托。委托应该是一份带类型、带预算、带验收标准的合同：</p>
+
+    <div class="code">
+      <div class="code-head"><b>delegate.ts</b><span>子任务必须有形状</span></div>
+      <pre><code><span class="k">interface</span> Delegation&lt;I, O&gt; {
+  role: <span class="s">"reviewer"</span> | <span class="s">"writer"</span> | <span class="s">"researcher"</span>;
+  input: I;                        <span class="c">// 结构化入参，不是一段话</span>
+  outputSchema: Schema&lt;O&gt;;         <span class="c">// 子 Agent 必须按这个形状回</span>
+  tools: <span class="k">string</span>[];                  <span class="c">// 白名单，不是全集</span>
+  budget: { tokens: <span class="k">number</span>; wallMs: <span class="k">number</span> };
+  acceptance: Assertion[];         <span class="c">// 主 Agent 用它验收，而不是靠读作文</span>
+  onFail: <span class="s">"retry"</span> | <span class="s">"skip"</span> | <span class="s">"escalate"</span>;
+}
+
+<span class="k">const</span> task: Delegation&lt;ReviewInput, ReviewOutput&gt; = {
+  role: <span class="s">"reviewer"</span>,
+  input: { files: changedFiles, focus: [<span class="s">"null-safety"</span>, <span class="s">"error-handling"</span>] },  <span class="c">// 只给这些，不给整个仓库</span>
+  outputSchema: ReviewOutput,       <span class="c">// { findings: [{file, line, severity, evidence}], verdict }</span>
+  tools: [<span class="s">"read_file"</span>, <span class="s">"grep"</span>],      <span class="c">// 只读，物理上无法改代码</span>
+  budget: { tokens: <span class="n">60_000</span>, wallMs: <span class="n">180_000</span> },
+  acceptance: [<span class="f">eachFindingHasEvidence</span>, <span class="f">verdictIsBinary</span>],
+  onFail: <span class="s">"escalate"</span>
+};</code></pre>
+    </div>
+
+    <p>这份契约里有三个设计值得说：</p>
+    <ul>
+      <li><strong>outputSchema 是硬约束</strong>：子 Agent 的自然语言推理留在它自己的上下文里，主 Agent 只收到结构化结论。这是「上下文隔离」真正的落地方式——不是换个进程，而是换一种数据形状。</li>
+      <li><strong>tools 是白名单</strong>：审查者的物理权限里没有写操作，它就不可能「顺手把问题改了」。权限靠结构，不靠嘱咐。</li>
+      <li><strong>acceptance 是断言</strong>：主 Agent 不读子 Agent 的作文来判断好坏，而是跑断言。这让「子 Agent 撒谎」变成一个可以被抓住的问题。</li>
+    </ul>
+
+    <h3><span class="n">5.5</span>预算继承与级联取消</h3>
+    <p>多 Agent 系统最容易被忽略的工程细节是生命周期。三个必须做对：</p>
+    <ul>
+      <li><strong>预算继承</strong>：子 Agent 的预算必须从父预算里扣，不能各算各的。否则五个 worker 各花 6 万 token，主任务以为自己只花了 2 万。</li>
+      <li><strong>级联取消</strong>：父任务被取消或超时，所有子任务必须立刻收到中止信号。Node 里的 <code>AbortSignal</code>、Python 里的 <code>asyncio.CancelledError</code>——不管用什么，必须有。</li>
+      <li><strong>失败传播策略</strong>：扇出的 N 个任务里失败一个，是整体失败、跳过、还是重试？这个决策必须写在拓扑定义里，而不是等运行时临场发挥。</li>
+    </ul>
+
+    <div class="rig" id="rig-topology">
+      <div class="rig-head">
+        <p class="rig-tag">SAMPLE 03 / TOPOLOGY SANDBOX</p>
+        <div class="legend">
+          <span><i style="background:#c8b89a"></i>token</span>
+          <span><i style="background:#2a6570"></i>有效结论</span>
+          <span><i style="background:#a33a27"></i>重复/噪声</span>
+        </div>
+      </div>
+      <p class="rig-title">同一个任务，两种拓扑：看消息量与有效信息的比例</p>
+      <div class="rig-stage">
+        <div id="topo-stage" aria-live="polite"></div>
+        <div id="topo-readout"></div>
+      </div>
+      <div class="rig-ctrl">
+        <button class="rig-btn on" id="topo-chat" type="button" aria-pressed="true">A · 群聊式</button>
+        <button class="rig-btn" id="topo-layer" type="button" aria-pressed="false">B · 分层式</button>
+        <button class="rig-btn copper" id="topo-run" type="button">重跑</button>
+      </div>
+      <p class="rig-cap" id="topo-cap">五名成员，任务：审查 40 个文件并给出结论。</p>
+    </div>
+
+    <p>小样是确定性模拟：群聊模式下每轮每人发言、每人读全场，消息数按 <code>N(N−1)</code> 增长；分层模式下主管只读结构化结果，worker 之间零通信。数字是模型，但增长阶数是真实的——你可以自己数一遍每一轮的读取次数。</p>
+
+    <div class="pull">
+      多 Agent 的价值不在「人多力量大」，而在「每人只看自己那一小块」。共享上下文越少，系统越可靠。
+      <cite>— 与直觉相反的一条</cite>
+    </div>
+  </div>
+</section>
+<section class="chapter" id="ch6">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M24 6a18 18 0 1 0 18 18" stroke="#2a6570" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M24 6v10" stroke="#a2612a" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M32 14l6-6" stroke="#a2612a" stroke-width="2.2" stroke-linecap="round"/>
+        <circle cx="24" cy="24" r="3" fill="#a2612a"/>
+      </svg>
+      <span>06</span>
+    </div>
+    <div>
+      <p class="chapter-label">DURABILITY</p>
+      <h2>崩溃之后：执行日记与可重放调试</h2>
+      <p>你的 Agent 跑到第 14 步，进程被 OOM 杀掉。第二天你重启它，它从第 1 步开始，把已经做过的副作用又做了一遍。</p>
+      <span class="chapter-stamp">造物手记 · 06 / 06</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>前面五章都在讲「怎么让它做对」。这一章讲「它挂了之后怎么办」——这是所有 Agent 文章都跳过、但所有生产系统都逃不掉的一章。</p>
+    <p>Agent 和普通程序最大的差别是：它的一次运行很贵（token、时间、外部副作用），而且它的中间状态很复杂（上下文、预算、计划、已确认的事实）。重新跑一遍不只是浪费时间，很可能<strong>做错事</strong>——比如把一封邮件发两次。</p>
+
+    <h3><span class="n">6.1</span>把每一步当成一次事务</h3>
+    <p>持久化的核心不是「保存状态」，而是<strong>让每一步都有明确的边界</strong>：进去之前有什么、出来之后变了什么、这一步的输入是什么、输出是什么。有了这个边界，你才能谈恢复。</p>
+
+    <div class="code">
+      <div class="code-head"><b>journal.ts</b><span>append-only，写入即真相</span></div>
+      <pre><code><span class="k">interface</span> Entry {
+  seq: <span class="k">number</span>;                 <span class="c">// 单调递增，恢复时按它排序</span>
+  phase: Phase;
+  action: { tool: <span class="k">string</span>; args: <span class="k">unknown</span> };
+  inputHash: <span class="k">string</span>;         <span class="c">// 参数 + 上下文摘要的哈希，用于去重</span>
+  output: <span class="k">unknown</span>;
+  verdict: <span class="s">"verified"</span> | <span class="s">"unverified"</span> | <span class="s">"contradicted"</span>;
+  tokens: <span class="k">number</span>; ts: <span class="k">number</span>;
+}
+
+<span class="k">async function</span> <span class="f">runDurable</span>(taskId: <span class="k">string</span>, state: TaskState) {
+  <span class="k">const</span> journal = <span class="k">await</span> <span class="f">loadJournal</span>(taskId);
+  <span class="k">if</span> (journal.length) state = <span class="f">replay</span>(state, journal);   <span class="c">// 先恢复，再继续</span>
+
+  <span class="k">while</span> (state.phase !== <span class="s">"done"</span> &amp;&amp; state.phase !== <span class="s">"halt"</span>) {
+    <span class="k">const</span> next = <span class="k">await</span> <span class="f">tick</span>(state);
+    <span class="k">if</span> (next.lastAction) {
+      <span class="k">const</span> key = <span class="f">hash</span>(next.lastAction);
+      <span class="k">const</span> seen = journal.<span class="f">find</span>(e =&gt; e.inputHash === key);
+      <span class="k">if</span> (seen) {                                            <span class="c">// 重放时跳过已完成的副作用</span>
+        state = <span class="f">apply</span>(state, seen);
+      } <span class="k">else</span> {
+        <span class="k">await</span> <span class="f">append</span>(taskId, next.lastEntry);                <span class="c">// 先写日志，再执行</span>
+        state = next;
+      }
+    } <span class="k">else</span> state = next;
+  }
+  <span class="k">return</span> state;
+}</code></pre>
+    </div>
+
+    <p>这段代码里有个容易写反的顺序：<strong>先写日志，再执行</strong>。如果反过来，进程可能在「执行完」和「写日志」之间崩溃，恢复时你以为没做过，于是又做一遍。先写日志的代价是可能记录了一次没执行的动作；解决办法是日志里多一个 <code>status: "planned" | "committed"</code>，恢复时对 planned 的条目做幂等重放。</p>
+
+    <h3><span class="n">6.2</span>重放调试：不花钱地把事故看一遍</h3>
+    <p>只要日志里存了每次模型调用的输入和输出，你就可以做一件很奢侈的事：<strong>把整次运行按原样重放，不调用任何模型</strong>。上下文怎么装配的、第 9 步为什么选了那个工具、第 12 步的验证为什么放行——全部可以逐帧回看。</p>
+    <p>我在 cc-probe 里第一次做这件事的时候，发现了一个隐藏了三周的问题：模型在第 7 步拿到的工具列表，比它应该看到的少了两个——因为上下文装配器把「工具定义」和「工作集」放在同一个预算池里，工作集超了就把工具挤掉了。<strong>这种 bug 在实时日志里看不出来，只在重放里现形。</strong></p>
+    <p>重放还有第二个用途：<strong>对照实验</strong>。同一份输入，换一个提示词、换一个模型、换一种压缩策略，重放一遍，看结果差异。这让提示词工程从「玄学调参」变成了「可以 A/B 的工程」。</p>
+
+    <h3><span class="n">6.3</span>给概率系统写测试</h3>
+    <p>「输出不可复现」是所有人不给 Agent 写测试的借口。但测试本来就不该断言输出等于某个字符串——那是最脆弱的测试。对 Agent，我们断言三件别的事：</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>测试类型</th><th>断言什么</th><th>例子</th><th>稳定性</th></tr></thead>
+        <tbody>
+          <tr><td>终态断言</td><td>最终结果满足的约束</td><td>生成的 JSON 能通过 schema；文件存在且可编译</td><td>高</td></tr>
+          <tr><td>过程断言</td><td>必须发生 / 禁止发生的事件</td><td>写文件之前必须读过它；不得调用 <code>send_email</code> 两次</td><td>高</td></tr>
+          <tr><td>基准断言</td><td>一组固定输入上的通过率</td><td>30 个用例里至少 27 个通过；平均步数 ≤ 8</td><td>中（要看方差）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>第三类需要特别小心。跑一次通过不代表稳定，跑一次失败也不代表坏了。正确做法是<strong>固定随机种子跑 N 次，看分布</strong>：通过率、步数分布、token 分位数。我通常跑 20 次，关注的是最差的那次，而不是最好的那次。</p>
+    <p>还有一件更便宜的事：<strong>录一条黄金轨迹</strong>。把一次成功的运行（含所有模型输入输出）存成 fixture，之后每次改内核，都用它重放一遍，断言过程断言全部通过。这本质上是 Agent 的回归测试——不测「模型聪明不聪明」，只测「内核有没有把已经跑通的路弄坏」。</p>
+
+    <h3><span class="n">6.4</span>内核能保证什么，不能保证什么</h3>
+    <p>写到这里，必须说一句诚实的话，否则这篇文章就是在贩卖银弹：</p>
+    <ul>
+      <li><strong>内核能保证</strong>：不失控（预算、停手、循环检测）、可恢复（日志、重放）、可归因（每一步有输入有输出有验证）、错误不扩散（守卫、幂等、回滚）。</li>
+      <li><strong>内核不能保证</strong>：正确性。一个逻辑上错误的计划，会稳定地、可恢复地、有日志地执行到底，然后交给你一个错误的结果。</li>
+    </ul>
+    <p>正确性来自<strong>领域 oracle</strong>——编译器、测试、schema、业务规则、人类审查。内核的作用是让这些 oracle 有机会介入，并且在它们说不的时候，系统真的会停下来。这也是为什么我在第二章说验证覆盖率比模型能力更值得投资：<strong>内核提供通道，oracle 提供真相。</strong></p>
+
+    <div class="note">
+      <span class="tag">KERNEL NOTE / 06</span>
+      <b>没有 oracle 的自动化，只是把错误做得更快。</b>如果你说不出「怎么判断这一步做对了」，那这一步就不该被自动化到无人值守。这不是技术限制，是责任边界。
+    </div>
+
+    <h3><span class="n">6.5</span>一个不到两千行的内核，长什么样</h3>
+    <p>把六章合起来，一个够用的 Agent 内核大致是这些模块。每个都不复杂，难的是它们必须同时存在：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>职责</th><th>关键约束</th><th>大约行数</th></tr></thead>
+        <tbody>
+          <tr><td><code>state</code></td><td>阶段、计划、发现、预算</td><td>不可变更新，可序列化</td><td class="num">120</td></tr>
+          <tr><td><code>loop</code></td><td>tick、阶段迁移、停手</td><td>退出条件显式且有限</td><td class="num">200</td></tr>
+          <tr><td><code>guard</code></td><td>前置检查、权限、预算扣减</td><td>失败即阻断，不吞异常</td><td class="num">150</td></tr>
+          <tr><td><code>oracle</code></td><td>语法/语义/事实三层验证</td><td>返回三值，不返回布尔</td><td class="num">250</td></tr>
+          <tr><td><code>context</code></td><td>分级装配、压缩、裁剪</td><td>预算硬上限，稳定前缀</td><td class="num">300</td></tr>
+          <tr><td><code>tools</code></td><td>契约、副作用分级、返回值裁剪</td><td>白名单，错误结构化</td><td class="num">400</td></tr>
+          <tr><td><code>journal</code></td><td>追加、恢复、重放</td><td>先写后做，幂等键</td><td class="num">200</td></tr>
+          <tr><td><code>eval</code></td><td>断言、黄金轨迹、N 次运行</td><td>过程断言优先</td><td class="num">250</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>加起来不到两千行。你会发现里面几乎没有「AI」——大部分是状态、预算、验证、日志。这就是我开头那句话的意思：<strong>Agent 的可靠性，主要不是 AI 问题，是系统问题。</strong></p>
+  </div>
+</section>
+<section class="chapter" id="closing">
+  <div class="chapter-head">
+    <div class="chapter-no">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <rect x="7" y="7" width="34" height="34" rx="6" stroke="#2a6570" stroke-width="2"/>
+        <path d="M15 24l6 6 12-13" stroke="#a2612a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>END</span>
+    </div>
+    <div>
+      <p class="chapter-label">CHECKLIST</p>
+      <h2>结语：笼子不是牢房，是脚手架</h2>
+      <p>把概率关进确定性的笼子，不是为了驯服模型，是为了让它的能力可以被安全地放大。</p>
+      <span class="chapter-stamp">造物手记 · 终章</span>
+    </div>
+  </div>
+
+  <div class="reading">
+    <p>写这篇文章的时候，我回头数了一下自己桌上那几套系统。它们的模型换过好几轮，提示词改过上百次，工具增删过几十个——但内核的骨架几乎没动过。状态机还是那个状态机，预算还是那个预算，日志还是那个日志。真正稳定的东西，从来不是聪明的那部分。</p>
+    <p>所以我不太相信「等模型再强一点，这些工程手段就不需要了」这种说法。模型越强，我们越会把更重要的任务交给它；任务越重要，失控的代价越大。能力和约束是同步增长的，这不是过渡期，这是常态。</p>
+    <p>如果这篇文章只能留下一句话，我希望是这句：<strong>不要问「怎么让 Agent 更聪明」，要问「它错了之后，系统会怎样」。</strong>前一个问题模型会替你回答，后一个问题只有你能回答。</p>
+
+    <div class="pull">
+      能力靠模型，可靠靠内核。模型负责把事做对，内核负责让错了的事不至于变成灾难。
+      <cite>— 造物手记 VOL.04</cite>
+    </div>
+
+    <h3><span class="n">附</span>内核速查卡</h3>
+    <p>下面这张卡可以打印出来贴在显示器边上。每一条都是一个问句，答不上来就说明那里有个洞。</p>
+
+    <div class="card-grid">
+      <div class="kcard">
+        <h4>01 · 控制流</h4>
+        <ul>
+          <li>循环的退出条件是显式的吗？</li>
+          <li>状态由谁持有——代码还是消息数组？</li>
+          <li>模型能决定「进入哪个阶段」吗？</li>
+          <li>预算耗尽时会发生什么？</li>
+        </ul>
+      </div>
+      <div class="kcard">
+        <h4>02 · 可靠性</h4>
+        <ul>
+          <li>这一步做错了，谁能发现？</li>
+          <li>验证覆盖率大概是多少？</li>
+          <li>重试预算是全局的还是每步的？</li>
+          <li>副作用可撤销吗？</li>
+        </ul>
+      </div>
+      <div class="kcard">
+        <h4>03 · 上下文</h4>
+        <ul>
+          <li>关键约束在第 15 轮还在吗？</li>
+          <li>工具返回裁剪过吗？</li>
+          <li>前缀稳定到能命中缓存吗？</li>
+          <li>事实存在哪里，能被断言吗？</li>
+        </ul>
+      </div>
+      <div class="kcard">
+        <h4>04 · 工具</h4>
+        <ul>
+          <li>工具数量超过 20 了吗？</li>
+          <li>返回值有结论和证据指针吗？</li>
+          <li>错误信息给出候选了吗？</li>
+          <li>写操作分级了吗？</li>
+        </ul>
+      </div>
+      <div class="kcard">
+        <h4>05 · 拓扑</h4>
+        <ul>
+          <li>子 Agent 之间能自由对话吗？</li>
+          <li>委托有 schema 和预算吗？</li>
+          <li>子任务的权限是白名单吗？</li>
+          <li>父任务取消时子任务会停吗？</li>
+        </ul>
+      </div>
+      <div class="kcard">
+        <h4>06 · 持久化</h4>
+        <ul>
+          <li>进程被杀之后能续跑吗？</li>
+          <li>日志是在执行前写的吗？</li>
+          <li>能重放整次运行吗？</li>
+          <li>回归测试断言过程还是输出？</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="endnote">下一篇（如果有的话）我想写「评估」：怎么给一个概率系统建立真正有意义的分数，而不是在十几个玩具用例上刷到 100%。那是这套内核唯一还没有被讲透的部分。</p>
+  </div>
+</section>
+
+<style>
+.card-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin:26px 0 28px}
+.kcard{background:var(--surface);border:1px solid var(--line);padding:16px 18px 12px}
+.kcard h4{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--copper);margin:0 0 10px;font-weight:600}
+.kcard ul{list-style:none;padding:0;margin:0;font-size:13.5px;line-height:1.8}
+.kcard li{padding:4px 0 4px 20px;position:relative;color:#3d4349}
+.kcard li::before{content:"";position:absolute;left:2px;top:12px;width:8px;height:8px;border:1.4px solid #b9b3a5;border-radius:2px}
+.endnote{font-size:14px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:26px}
+@media (max-width:620px){.card-grid{grid-template-columns:1fr}}
+</style>
+</div>
+</main>
+
+<footer class="wrap site-foot">
+  <div class="colophon">
+    <h4>COLOPHON</h4>
+    <p>单页站点，零构建、零依赖：HTML / CSS / 原生 JS。正文字体为霞鹜文楷（SIL OFL 1.1），按本文用字子集化后自托管。所有示意图为手写 SVG，可无损缩放；三枚小样是可推演的确定性模型，不是录屏。</p>
+    <p>文中代码为教学用伪代码，省略了类型体操与重试细节；真实实现见页脚仓库。</p>
+  </div>
+  <div>
+    <h4>SOURCES</h4>
+    <p>ReAct (Yao et al., 2022) · Lost in the Middle (Liu et al., 2023) · Attention Sinks (Xiao et al., 2023) · Anthropic: Building effective agents (2024) · 以及我在 hermes-agent-workbench、cc-probe、video-agent-lab、dynamic-workflows 四套系统上的实测记录。</p>
+    <p><a href="https://github.com/StarrySea1412">github.com/StarrySea1412</a> · 造物手记 VOL.04 · 2026.10</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- progress ---------- */
+  var bar = document.getElementById('progress');
+  function onScroll() {
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.transform = 'scaleX(' + (max > 0 ? Math.min(1, h.scrollTop / max) : 0) + ')';
+  }
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  /* ---------- helpers ---------- */
+  function $(id) { return document.getElementById(id); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function pct(x) { return (x * 100).toFixed(1) + '%'; }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function svgEl(name, attrs) {
+    var e = document.createElementNS('http://www.w3.org/2000/svg', name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  /* =========================================================
+     RIG 1 — reliability cliff
+     ========================================================= */
+  (function reliability() {
+    var stepsIn = $('rel-steps'), pIn = $('rel-p');
+    var stepsOut = $('rel-steps-out'), pOut = $('rel-p-out');
+    var chart = $('rel-chart'), trace = $('rel-trace'), cap = $('rel-cap'), runBtn = $('rel-run');
+    if (!chart) return;
+
+    var W = 680, H = 268, PL = 46, PR = 16, PT = 18, PB = 42;
+    var V = 0.90, R = 0.70;            // verifier coverage, repair success
+    var seed = 20261020;
+
+    // 让 SVG 的 1 单位 = 1 像素，窄屏上字号才不会被等比缩成蚂蚁
+    function measure() {
+      var w = Math.round(chart.getBoundingClientRect().width);
+      if (w > 80) { W = w; }
+      H = Math.round(clamp(W * 0.42, 210, 290));
+      chart.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      chart.setAttribute('height', H);
+    }
+
+    function defendedStep(p) { return 1 - (1 - p) * (1 - V * R); }
+    function x(n) { return PL + (n - 1) / 29 * (W - PL - PR); }
+    function y(v) { return PT + (1 - v) * (H - PT - PB); }
+
+    function drawChart(n, p) {
+      chart.innerHTML = '';
+      var g = svgEl('g', {});
+      var small = W < 460;
+      // grid + y labels
+      [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+        g.appendChild(svgEl('line', { x1: PL, y1: y(v), x2: W - PR, y2: y(v), stroke: '#2a3238', 'stroke-width': 1 }));
+        if (small && v !== 0 && v !== 1 && v !== 0.5) return;
+        var t = svgEl('text', { x: PL - 8, y: y(v) + 4, 'text-anchor': 'end', 'font-family': 'monospace', 'font-size': 9.5, fill: '#8b949c' });
+        t.textContent = Math.round(v * 100) + '%';
+        g.appendChild(t);
+      });
+      // x labels
+      (small ? [1, 10, 20, 30] : [1, 5, 10, 15, 20, 25, 30]).forEach(function (k) {
+        var t = svgEl('text', { x: x(k), y: H - 14, 'text-anchor': k === 1 ? 'start' : 'middle', 'font-family': 'monospace', 'font-size': 9.5, fill: '#8b949c' });
+        t.textContent = k;
+        g.appendChild(t);
+      });
+
+      // series
+      var barePts = [], defPts = [];
+      for (var i = 1; i <= 30; i++) {
+        barePts.push(x(i) + ',' + y(Math.pow(p, i)));
+        defPts.push(x(i) + ',' + y(Math.pow(defendedStep(p), i)));
+      }
+      g.appendChild(svgEl('polyline', { points: barePts.join(' '), fill: 'none', stroke: '#a33a27', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      g.appendChild(svgEl('polyline', { points: defPts.join(' '), fill: 'none', stroke: '#4e9aa6', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+      // current marker
+      [Math.pow(p, n), Math.pow(defendedStep(p), n)].forEach(function (v, idx) {
+        g.appendChild(svgEl('line', { x1: x(n), y1: PT, x2: x(n), y2: H - PB, stroke: '#5a646c', 'stroke-width': 1, 'stroke-dasharray': '3 4' }));
+        g.appendChild(svgEl('circle', { cx: x(n), cy: y(v), r: 4.5, fill: idx === 0 ? '#a33a27' : '#4e9aa6', stroke: '#14181c', 'stroke-width': 2 }));
+        var lb = svgEl('text', { x: x(n) + 8, y: y(v) - 8, 'font-family': 'monospace', 'font-size': 10, fill: idx === 0 ? '#e59b8a' : '#8fd3dc' });
+        lb.textContent = Math.round(v * 100) + '%';
+        g.appendChild(lb);
+      });
+      chart.appendChild(g);
+    }
+
+    function drawTrace(n, p) {
+      var eff = defendedStep(p);
+      var rnd = mulberry32(seed);
+      var cells = [];
+      var died = -1;
+      for (var i = 1; i <= n; i++) {
+        var ok = rnd() < eff;
+        if (!ok && died < 0) died = i;
+        cells.push('<span class="cell ' + (died > 0 && i > died ? 'spread' : (ok ? 'ok' : 'bad')) + '" title="step ' + i + '">' + i + '</span>');
+      }
+      trace.innerHTML =
+        '<div class="trace-row">' + cells.join('') + '</div>' +
+        '<div class="trace-note">' + (died > 0
+          ? '这一轮在第 <b>' + died + '</b> 步失败。红点之后是"污染传播"：状态里留下了错误结论，后续每一步都在错误的世界里正确执行。'
+          : '这一轮 ' + n + ' 步全部通过。换一个种子再跑，你会看到它不是每次都这么走运。') + '</div>';
+
+      var bareE = Math.pow(p, n), defE = Math.pow(eff, n);
+      cap.textContent = '横轴：任务步数 · 端到端：裸奔 ' + pct(bareE) + ' · 防线 ' + pct(defE) +
+        '（v=' + V.toFixed(2) + ', r=' + R.toFixed(2) + '，单步有效率 ' + pct(eff) + '）';
+    }
+
+    function update() {
+      var n = +stepsIn.value, p = +pIn.value / 100;
+      stepsOut.textContent = n;
+      pOut.textContent = Math.round(p * 100) + '%';
+      measure();
+      drawChart(n, p);
+      drawTrace(n, p);
+    }
+    stepsIn.addEventListener('input', update);
+    pIn.addEventListener('input', update);
+    runBtn.addEventListener('click', function () {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      drawTrace(+stepsIn.value, +pIn.value / 100);
+    });
+    var rT;
+    window.addEventListener('resize', function () {
+      clearTimeout(rT); rT = setTimeout(update, 150);
+    });
+    update();
+  })();
+
+  /* =========================================================
+     RIG 2 — context decay
+     ========================================================= */
+  (function contextDecay() {
+    var roundIn = $('ctx-round'), roundOut = $('ctx-round-out');
+    var pruneBtn = $('ctx-prune'), bars = $('ctx-bars'), readout = $('ctx-readout');
+    if (!bars) return;
+    var prune = true;
+
+    var FIXED = { goal: 900, tools: 1200, work: 2200 };
+    var MAX = 32000;
+
+    function model(r, pruned) {
+      var useful, noise, summary = 0;
+      if (pruned) {
+        useful = 120 * r;                       // 结论与证据指针
+        noise = 90 * Math.min(3, r);            // 只留最近三轮的残余，更早的在压缩时被清掉
+        summary = 60 * Math.floor(r / 3);       // 每三轮一次的压缩摘要
+      } else {
+        useful = 120 * r;
+        noise = 1100 * r;                       // 原始工具返回全量堆叠
+      }
+      return { useful: useful, noise: noise, summary: summary };
+    }
+
+    function render() {
+      var r = +roundIn.value;
+      roundOut.textContent = r;
+      var m = model(r, prune);
+      var total = FIXED.goal + FIXED.tools + FIXED.work + m.useful + m.noise + m.summary;
+      var noiseRatio = m.noise / total;
+      var load = clamp(total / MAX, 0, 1);
+
+      var segs = [
+        { k: 'goal', label: '目标', v: FIXED.goal, c: '#7aa9ae' },
+        { k: 'tools', label: '工具', v: FIXED.tools, c: '#c8b89a' },
+        { k: 'work', label: '工作集', v: FIXED.work, c: '#5b8f98' },
+        { k: 'useful', label: '有效历史', v: m.useful, c: '#3f6f78' },
+        { k: 'noise', label: '噪声', v: m.noise + m.summary, c: '#a33a27' }
+      ];
+      var html = '<div class="ctx-bar">';
+      segs.forEach(function (s) {
+        var w = s.v / MAX * 100;
+        if (w <= 0) return;
+        html += '<span style="width:' + w + '%;background:' + s.c + '" title="' + s.label + ' ' + s.v + ' token"><i>' + (w > 9 ? s.label : '') + '</i></span>';
+      });
+      html += '</div>';
+      html += '<div class="ctx-scale"><span>0</span><span>' + (MAX / 1000) + 'K 窗口</span></div>';
+
+      var quality = clamp(100 * (1 - 0.62 * noiseRatio - 0.34 * load), 24, 98);
+      var recall = prune
+        ? clamp(100 - 1.1 * r - 6 * noiseRatio, 62, 99)          // 结构化便签 + 目标常驻：慢衰减
+        : clamp(100 - 3.2 * r - 26 * noiseRatio, 22, 99);        // 流水账：注意力被稀释，目标被埋
+      var snr = m.noise > 0 ? (m.useful / m.noise) : 99;
+
+      var warn = [];
+      if (noiseRatio > 0.45) warn.push('噪声占比 ' + Math.round(noiseRatio * 100) + '%，关键约束已被稀释');
+      if (!prune && r >= 11) warn.push('第 ' + r + ' 轮，初始目标的召回率跌破 70%');
+      if (total > 26000) warn.push('工具输出正在挤占工作区');
+      if (prune && r >= 12) warn.push('已压缩 ' + Math.floor(r / 3) + ' 次：摘要开始丢失细节，但事实仍在 L2');
+
+      readout.innerHTML =
+        '<div class="ctx-stats">' +
+          '<div><span class="k">上下文总量</span><b>' + (total / 1000).toFixed(1) + 'K</b></div>' +
+          '<div><span class="k">信噪比</span><b>' + (snr >= 10 ? snr.toFixed(0) : snr.toFixed(1)) + ' : 1</b></div>' +
+          '<div><span class="k">注意力质量</span><b class="' + (quality < 55 ? 'bad' : quality < 75 ? 'warn' : 'ok') + '">' + Math.round(quality) + '</b></div>' +
+          '<div><span class="k">目标召回</span><b class="' + (recall < 60 ? 'bad' : recall < 78 ? 'warn' : 'ok') + '">' + Math.round(recall) + '%</b></div>' +
+        '</div>' +
+        (warn.length ? '<ul class="ctx-warn">' + warn.map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>'
+                     : '<p class="ctx-ok">工作集干净：模型这一轮能看到的信息，几乎都是它需要的。</p>');
+
+      bars.innerHTML = html;
+    }
+
+    roundIn.addEventListener('input', render);
+    pruneBtn.addEventListener('click', function () {
+      prune = !prune;
+      pruneBtn.textContent = '阶梯压缩：' + (prune ? '开' : '关');
+      pruneBtn.classList.toggle('on', prune);
+      pruneBtn.setAttribute('aria-pressed', String(prune));
+      render();
+    });
+    render();
+  })();
+
+  /* =========================================================
+     RIG 3 — topology sandbox
+     ========================================================= */
+  (function topology() {
+    var stage = $('topo-stage'), readout = $('topo-readout'), cap = $('topo-cap');
+    var chatBtn = $('topo-chat'), layerBtn = $('topo-layer'), runBtn = $('topo-run');
+    if (!stage) return;
+    var mode = 'chat';
+    var timer = null;
+
+    function buildStage() {
+      if (mode === 'chat') {
+        var names = ['PM', 'ARCH', 'DEV', 'QA', 'OPS'];
+        stage.innerHTML =
+          '<div class="topo topo-chat">' +
+          '<p class="topo-label">群聊：每轮 5 人发言，每人读全场</p>' +
+          '<div class="chat-ring">' +
+          names.map(function (n, i) {
+            return '<div class="node chat-node" style="--i:' + i + '"><b>' + n + '</b><span>reads 4</span></div>';
+          }).join('') +
+          '<div class="chat-wire"></div>' +
+          '</div></div>';
+      } else {
+        stage.innerHTML =
+          '<div class="topo topo-layer">' +
+          '<p class="topo-label">分层：主管只读结构化结果，worker 零互通</p>' +
+          '<div class="layer-boss"><b>SUPERVISOR</b><span>reads 3 results</span></div>' +
+          '<div class="layer-rail"></div>' +
+          '<div class="layer-workers">' +
+          ['reviewer A', 'reviewer B', 'reviewer C'].map(function (n) {
+            return '<div class="node worker-node"><b>' + n + '</b><span>isolated ctx</span></div>';
+          }).join('') +
+          '</div></div>';
+      }
+    }
+
+    function simulate() {
+      if (timer) clearInterval(timer);
+      buildStage();
+      var round = 0, msgs = 0, tokens = 0, useful = 0, noisy = 0;
+      var MAXR = 6;
+
+      function step() {
+        round++;
+        if (mode === 'chat') {
+          var sp = 5;                                   // 本轮每人一条
+          msgs += sp;
+          var reads = sp * 4;                           // 每条被另外四人读
+          tokens += reads * 260 + sp * 180;             // 读取成本 + 生成成本
+          useful += 1;                                  // 每轮最多一条新结论
+          noisy += reads - 1;
+        } else {
+          msgs += 4;                                    // 3 派发 + 3 回传，压成 4 条
+          tokens += 3 * 420 + 3 * 160;                 // 三次独立审查 + 回传
+          useful += 3;
+          noisy += 1;
+        }
+
+        var nodeMsg = document.querySelectorAll('.node');
+        nodeMsg.forEach(function (n, i) { n.style.opacity = (0.45 + ((round + i) % 3) * 0.2).toFixed(2); });
+
+        readout.innerHTML =
+          '<div class="ctx-stats">' +
+            '<div><span class="k">轮次</span><b>' + round + ' / ' + MAXR + '</b></div>' +
+            '<div><span class="k">消息</span><b>' + msgs + '</b></div>' +
+            '<div><span class="k">token</span><b>' + (tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : tokens) + '</b></div>' +
+            '<div><span class="k">有效结论</span><b class="ok">' + useful + '</b></div>' +
+            '<div><span class="k">重复/噪声</span><b class="bad">' + noisy + '</b></div>' +
+          '</div>' +
+          '<div class="eff-bar"><span style="width:' + clamp(useful / (useful + noisy) * 100, 0, 100) + '%"></span></div>' +
+          '<p class="topo-note">' + (mode === 'chat'
+            ? '每条发言被其余四人完整读取一次——信息在传播中被复述，而不是被验证。'
+            : '每个 worker 只看到自己那份输入，回传被 schema 约束；主管的上下文里没有别人的内心戏。') + '</p>';
+
+        if (round >= MAXR) {
+          clearInterval(timer);
+          timer = null;
+          cap.textContent = mode === 'chat'
+            ? '结果：' + msgs + ' 条消息、' + (tokens / 1000).toFixed(1) + 'K token，换来 ' + useful + ' 条可验证结论；噪声 ' + noisy + ' 条。'
+            : '结果：' + msgs + ' 条消息、' + (tokens / 1000).toFixed(1) + 'K token，换来 ' + useful + ' 条可验证结论；噪声 ' + noisy + ' 条。';
+        }
+      }
+      step();
+      timer = setInterval(step, 620);
+    }
+
+    chatBtn.addEventListener('click', function () {
+      mode = 'chat';
+      chatBtn.classList.add('on'); layerBtn.classList.remove('on');
+      chatBtn.setAttribute('aria-pressed', 'true'); layerBtn.setAttribute('aria-pressed', 'false');
+      simulate();
+    });
+    layerBtn.addEventListener('click', function () {
+      mode = 'layer';
+      layerBtn.classList.add('on'); chatBtn.classList.remove('on');
+      layerBtn.setAttribute('aria-pressed', 'true'); chatBtn.setAttribute('aria-pressed', 'false');
+      simulate();
+    });
+    runBtn.addEventListener('click', simulate);
+    simulate();
+  })();
+})();
+</script>
+</body>
+</html>

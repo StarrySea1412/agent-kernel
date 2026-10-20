@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<link rel="preload" href="assets/fonts/wenkai-regular.woff2" as="font" type="font/woff2" crossorigin/>
+<link rel="preload" href="assets/fonts/wenkai-medium.woff2" as="font" type="font/woff2" crossorigin/>
+<title>Agent 内核 · 技术栈全景图</title>
+<style>
+@font-face{font-family:"LXGW WenKai";src:url("assets/fonts/wenkai-regular.woff2") format("woff2");font-weight:300 599;font-display:swap}
+@font-face{font-family:"LXGW WenKai";src:url("assets/fonts/wenkai-medium.woff2") format("woff2");font-weight:600 900;font-display:swap}
+:root{
+  --paper:#f5f2ea;--surface:#fffdf6;--ink:#1c1f23;--muted:#6a6f76;--line:#ddd6c6;
+  --copper:#a2612a;--copper-soft:#f4e6d8;--steel:#2a6570;--steel-soft:#dfeef0;--alert:#a33a27;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  width:880px;background:var(--paper);color:var(--ink);
+  font-family:"LXGW WenKai",-apple-system,"PingFang SC",sans-serif;
+  padding:44px 46px 40px;-webkit-font-smoothing:antialiased;
+}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:2px solid var(--ink);padding-bottom:16px}
+.eyebrow{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;letter-spacing:.22em;color:var(--copper);margin:0 0 8px}
+h1{margin:0;font-size:34px;line-height:1.2;letter-spacing:-.01em;font-weight:800}
+h1 em{font-style:normal;color:var(--steel)}
+.head .meta{text-align:right;font-family:ui-monospace,Consolas,monospace;font-size:10px;line-height:1.9;color:var(--muted);letter-spacing:.06em;white-space:nowrap}
+.dek{margin:16px 0 26px;font-size:13.5px;line-height:1.85;color:#4a5057;max-width:720px}
+.legend{display:grid;grid-template-columns:52px 1fr;gap:0;margin-bottom:8px;font-family:ui-monospace,Consolas,monospace;font-size:9px;letter-spacing:.14em;color:#9a9e9f}
+.legend span:nth-child(2){padding-left:14px}
+.layer{display:grid;grid-template-columns:52px 1fr;gap:0;border-top:1px solid var(--line)}
+.layer:last-of-type{border-bottom:1px solid var(--line)}
+.lname{background:#ece7da;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 0;border-right:1px solid var(--line)}
+.lname b{font-family:ui-monospace,Consolas,monospace;font-size:9.5px;letter-spacing:.1em;color:var(--copper)}
+.lname span{writing-mode:vertical-rl;font-size:10.5px;letter-spacing:.24em;color:#6d6a5f;margin-top:10px}
+.cells{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);padding:1px 0 1px 1px}
+.cell{background:var(--surface);padding:12px 13px 11px;min-height:96px;position:relative}
+.cell h3{margin:0 0 3px;font-size:13.5px;font-weight:700;line-height:1.35}
+.cell .en{font-family:ui-monospace,Consolas,monospace;font-size:8.5px;letter-spacing:.1em;color:#a3a6a4;display:block;margin-bottom:7px}
+.cell p{margin:0;font-size:11px;line-height:1.7;color:#5b6167}
+.cell.key{background:var(--steel-soft)}
+.cell.key h3{color:var(--steel)}
+.cell.warn{background:#f7e7e1}
+.cell.warn h3{color:var(--alert)}
+.cell.copper{background:var(--copper-soft)}
+.cell.copper h3{color:#7b4a1d}
+.cell .badge{position:absolute;top:9px;right:10px;font-family:ui-monospace,Consolas,monospace;font-size:7.5px;letter-spacing:.08em;color:#a3a6a4}
+.foot{display:grid;grid-template-columns:1.35fr 1fr;gap:24px;margin-top:26px;border-top:1px solid var(--ink);padding-top:16px}
+.foot h4{margin:0 0 8px;font-family:ui-monospace,Consolas,monospace;font-size:9px;letter-spacing:.2em;color:var(--copper);font-weight:600}
+.foot p{margin:0 0 8px;font-size:10.5px;line-height:1.8;color:#5b6167}
+.eq{font-family:ui-monospace,Consolas,monospace;font-size:10px;color:#3d4348;line-height:2}
+.eq b{color:var(--alert);font-weight:600}
+.stamp{display:flex;justify-content:space-between;align-items:center;margin-top:18px;font-family:ui-monospace,Consolas,monospace;font-size:9px;letter-spacing:.14em;color:#a3a6a4}
+.stamp b{color:var(--copper);font-weight:600}
+</style>
+</head>
+<body>
+<div class="head">
+  <div>
+    <p class="eyebrow">FIELD NOTES · VOL.04 · STACK MAP</p>
+    <h1>Agent <em>内核</em> · 技术栈全景</h1>
+  </div>
+  <div class="meta">造物手记 VOL.04<br/>2026.10<br/>StarrySea1412</div>
+</div>
+<p class="dek">一台敢碰生产的 Agent，由六个互相咬合的子系统组成。越往上越接近模型（会犯错），越往下越接近内核（不能犯错）。这张图不是框架清单，是责任划分：每一格问的都是「这里谁来兜底」。</p>
+
+<div class="legend"><span>LAYER</span><span>SUBSYSTEMS ／ 每一格 = 一个必须存在的职责</span></div>
+
+<div class="layer">
+  <div class="lname"><b>L5</b><span>策略层</span></div>
+  <div class="cells">
+    <div class="cell"><h3>模型调用</h3><span class="en">MODEL CALL</span><p>单次补全，带结构化输出约束。只允许在槽位内决策，不持有循环。</p></div>
+    <div class="cell"><h3>提示词装配</h3><span class="en">PROMPT ASSEMBLY</span><p>固定前缀 + 阶段化工具集 + 当前步骤；模板版本化，可回滚。</p></div>
+    <div class="cell"><h3>结构化输出</h3><span class="en">JSON SCHEMA</span><p>工具调用与结论都走 schema；解析失败按语义错误处理，不重试。</p></div>
+    <div class="cell copper"><h3>评审员</h3><span class="en">LLM JUDGE</span><p>窄任务裁判：判断「是否满足这几条断言」，不用来生成。</p></div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="lname"><b>L4</b><span>控制层</span></div>
+  <div class="cells">
+    <div class="cell key"><h3>状态机</h3><span class="en">STATE MACHINE</span><p>阶段与迁移表由代码持有；模型无权决定进入哪个阶段。</p><span class="badge">CORE</span></div>
+    <div class="cell key"><h3>预算墙</h3><span class="en">BUDGET</span><p>token / 步数 / 墙钟 / 调用数，四项共享；触顶即 halt，不商量。</p></div>
+    <div class="cell"><h3>停手条件</h3><span class="en">HALT RULES</span><p>重复指纹、无进展、连续验证失败、审批超时——五道闸。</p></div>
+    <div class="cell"><h3>拓扑编排</h3><span class="en">TOPOLOGY</span><p>Supervisor/Worker 或 Fan-out/Fan-in；子任务带 schema 与继承预算。</p></div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="lname"><b>L3</b><span>可靠性</span></div>
+  <div class="cells">
+    <div class="cell warn"><h3>前置守卫</h3><span class="en">GUARD</span><p>副作用发生之前拦：路径、schema、权限、预算、阶段白名单。</p><span class="badge">CHEAP</span></div>
+    <div class="cell key"><h3>后置验证</h3><span class="en">ORACLE</span><p>语法 / 语义 / 事实三层；返回 verified / unverified / contradicted 三值。</p></div>
+    <div class="cell warn"><h3>补偿回滚</h3><span class="en">COMPENSATION</span><p>临时文件 + 原子重命名、事务、幂等键；不可撤销者必须人审。</p></div>
+    <div class="cell"><h3>失败分类</h3><span class="en">CLASSIFIER</span><p>瞬时 / 参数 / 语义，三种路由；语义失败绝不重试。</p></div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="lname"><b>L2</b><span>上下文</span></div>
+  <div class="cells">
+    <div class="cell"><h3>分级存储</h3><span class="en">L0–L3 MEMORY</span><p>工作集 / 便签 / 事实 KV / 事件日志；前三者是视图，日志是真相。</p></div>
+    <div class="cell key"><h3>装配器</h3><span class="en">ASSEMBLER</span><p>定清单、排序、装填、记录丢弃；pin 段命中前缀缓存。</p></div>
+    <div class="cell"><h3>压缩策略</h3><span class="en">COMPACTION</span><p>只压过程不压事实；每三轮一次结构化摘要；事实进 KV。</p></div>
+    <div class="cell"><h3>检索</h3><span class="en">RETRIEVAL</span><p>按当前步骤取片段；切块与索引质量决定上限。</p></div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="lname"><b>L1</b><span>界面层</span></div>
+  <div class="cells">
+    <div class="cell key"><h3>工具契约</h3><span class="en">TOOL SPEC</span><p>副作用等级、幂等性、超时、前置条件、错误分类、返回值裁剪。</p></div>
+    <div class="cell"><h3>返回值设计</h3><span class="en">TRIM</span><p>结论先行 + 证据指针 + next；日志进文件，不给全文。</p></div>
+    <div class="cell"><h3>权限白名单</h3><span class="en">SCOPE</span><p>子 Agent 物理上拿不到越权的工具；不靠提示词约束。</p></div>
+    <div class="cell copper"><h3>人类停点</h3><span class="en">HUMAN GATE</span><p>不可逆操作、审批超时、验证连败；超时走安全默认并留待办。</p></div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="lname"><b>L0</b><span>持久层</span></div>
+  <div class="cells">
+    <div class="cell"><h3>执行日记</h3><span class="en">JOURNAL</span><p>append-only，先写后做；输入哈希做幂等键。</p></div>
+    <div class="cell"><h3>快照与恢复</h3><span class="en">SNAPSHOT</span><p>每 N 步一份可恢复状态；进程被杀可续跑。</p></div>
+    <div class="cell"><h3>重放调试</h3><span class="en">REPLAY</span><p>不调模型，逐帧回看上下文装配与决策。</p></div>
+    <div class="cell"><h3>评测靶场</h3><span class="en">EVAL</span><p>终态 / 过程 / 基准三类断言；黄金轨迹回归内核。</p></div>
+  </div>
+</div>
+
+<div class="foot">
+  <div>
+    <h4>WHY THIS SHAPE</h4>
+    <p>上四层决定它有多聪明，下两层决定它有多可信。所有事故几乎都发生在「职责没有归属」的缝隙里——所以这张图的每一格都是一个问句：这里谁兜底？</p>
+    <p>内核约 2000 行，其中真正的「AI 代码」不到两成；其余是状态、预算、验证、日志。</p>
+  </div>
+  <div>
+    <h4>THE ARITHMETIC</h4>
+    <div class="eq">
+      P(n steps) = p<sup>n</sup><br/>
+      p=0.95, n=10 → <b>59.9%</b><br/>
+      p=0.95, n=20 → <b>35.8%</b><br/>
+      加守卫+验证：p' = 1−(1−p)(1−vr)<br/>
+      v=0.90, r=0.70 → p' = <b>98.2%</b>
+    </div>
+  </div>
+</div>
+
+<div class="stamp"><span>READ · <b>Agent 内核 · 把概率关进确定性的笼子</b></span><span>STARRYSEA · 造物手记 VOL.04</span></div>
+</body>
+</html>
