@@ -506,7 +506,7 @@ td code{font-size:11.5px}
     <div>
       <p class="chapter-label">RELIABILITY</p>
       <h2>0.95 的十次方：可靠性断崖</h2>
-      <p>单步 95% 听起来很稳。十步之后是 59.8%，二十步之后是 35.8%。工程不是靠祈祷跨过这道算术的。</p>
+      <p>单步 95% 听起来很稳。十步之后是 59.9%，二十步之后是 35.8%。工程不是靠祈祷跨过这道算术的。</p>
       <span class="chapter-stamp">造物手记 · 02 / 06</span>
     </div>
   </div>
@@ -577,7 +577,7 @@ td code{font-size:11.5px}
         <div class="ctrl"><label for="rel-p">单步成功率</label><input id="rel-p" type="range" min="80" max="99" value="95" step="1"/><output id="rel-p-out">95%</output></div>
         <button class="rig-btn" id="rel-run" type="button">跑一次</button>
       </div>
-      <p class="rig-cap" id="rel-cap">端到端：裸奔 59.9% · 防线 98.1%。点「跑一次」看这次死在第几步。</p>
+      <p class="rig-cap" id="rel-cap">端到端：裸奔 59.9% · 防线 83.0%。点「跑一次」看这次死在第几步。</p>
     </div>
 
     <p>上图的模型刻意做得很简单，你可以自己核：防御链的单步有效率按 <code>1 − (1−p)(1−v·r)</code> 估，其中验证覆盖率 <code>v = 0.9</code>、修复成功率 <code>r = 0.7</code>。这两个数字不是拍脑袋——它们来自我系统里三个月的修复日志，不达标就退回重做。<strong>把假设写在明面上，比把成功率吹到 99.9% 有用得多。</strong></p>
@@ -1441,7 +1441,7 @@ Error: file not found
   <div>
     <h4>SOURCES</h4>
     <p>ReAct (Yao et al., 2022) · Lost in the Middle (Liu et al., 2023) · Attention Sinks (Xiao et al., 2023) · Anthropic: Building effective agents (2024) · 以及我在 hermes-agent-workbench、cc-probe、video-agent-lab、dynamic-workflows 四套系统上的实测记录。</p>
-    <p><a href="https://github.com/StarrySea1412">github.com/StarrySea1412</a> · 造物手记 VOL.04 · 2026.10</p>
+    <p><a href="assets/tech-stack.png">技术栈全景图（PNG）</a> · <a href="https://github.com/StarrySea1412">github.com/StarrySea1412</a> · 造物手记 VOL.04 · 2026.10</p>
   </div>
 </footer>
 
